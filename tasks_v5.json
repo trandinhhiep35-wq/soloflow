@@ -1,0 +1,30 @@
+{
+    "tasks": [],
+    "user_stats": {
+        "xp": 50,
+        "level": 1,
+        "focus_minutes": 0,
+        "streak": 2,
+        "last_active": "2026-07-17"
+    },
+    "achievements": [
+        {
+            "id": "first_step",
+            "title": "Bước đi đầu tiên",
+            "desc": "Hoàn thành nhiệm vụ đầu tiên",
+            "unlocked": true
+        },
+        {
+            "id": "focus_master",
+            "title": "Chiến binh tập trung",
+            "desc": "Tích lũy 100 phút Flow State",
+            "unlocked": false
+        },
+        {
+            "id": "burnout_survivor",
+            "title": "Bậc thầy cân bằng",
+            "desc": "Vượt qua cảnh báo Burnout thành công",
+            "unlocked": false
+        }
+    ]
+}
