@@ -8,6 +8,13 @@ import math
 import hashlib
 from datetime import date, datetime, timedelta
 
+# --- TỰ ĐỘNG NẠP BIẾN MÔI TRƯỜNG FILE .ENV (LOCAL) ---
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # --- CẤU HÌNH TRANG WEB CHUẨN PREMIUM ---
 st.set_page_config(
     page_title="SoloFlow OS v5.5 Ultimate Auth",
@@ -338,6 +345,21 @@ if "energy_level" not in st.session_state:
 if "binaural_playing" not in st.session_state:
     st.session_state.binaural_playing = False
 
+# --- BỘ TỰ ĐỘNG NẠP API KEY THÔNG MINH (CLOUD & LOCAL) ---
+def load_gemini_api_key():
+    # 1. Thử lấy từ Secrets trên Streamlit Cloud (Bản Web)
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    # 2. Thử lấy từ Environment Variables / File .env (Local)
+    return os.getenv("GEMINI_API_KEY", "")
+
+# Nạp tự động vào session_state ngay từ khi khởi động
+if "gemini_key" not in st.session_state:
+    st.session_state["gemini_key"] = load_gemini_api_key()
+
 # Tải dữ liệu ban đầu
 all_users = load_users()
 all_tasks = load_tasks()
@@ -347,7 +369,7 @@ def call_gemini(prompt: str, system_instruction: str = "") -> str:
     if not HAS_AI:
         return "Lỗi: Chưa cài đặt thư viện google-generativeai."
     current_key = st.session_state.get("gemini_key", "").strip()
-    if not current_key or current_key == "AIzaSy...":
+    if not current_key or current_key == "AIzaSy..." or current_key == "AQ...":
         return "Vui lòng nhập mã API Key hợp lệ trên Sidebar để kích hoạt AI!"
     try:
         genai.configure(api_key=current_key)
@@ -518,12 +540,13 @@ with st.sidebar:
         "Nhập Gemini API Key:", 
         type="password", 
         value=st.session_state.get("gemini_key", ""),
-        placeholder="Bắt đầu bằng AIzaSy..."
+        placeholder="Đang nạp tự động..."
     )
     if api_key_input:
         st.session_state["gemini_key"] = api_key_input
 
-    if HAS_AI and api_key_input:
+    # Kiểm tra trạng thái nạp tự động
+    if HAS_AI and st.session_state.get("gemini_key"):
         st.success("Trí tuệ AI đã sẵn sàng!")
     else:
         st.warning("AI đang tạm khóa (Thiếu Key)")
@@ -711,7 +734,7 @@ with tab_tasks:
         st.markdown("### 🧠 AI Task Splitter - Tự động rã việc")
         st.write("Nhập mục tiêu lớn phức tạp, SoloMind AI sẽ tự phân tích và phân rã thành các hành động con nhỏ lập tức.")
         
-        if HAS_AI and api_key_input:
+        if HAS_AI and st.session_state.get("gemini_key"):
             ai_goal = st.text_area("Mục tiêu lớn cần rã việc:", placeholder="Ví dụ: Lên kế hoạch tuần ra mắt sản phẩm thương mại mới...", key="ai_splitter_input")
             ai_proj_name = st.text_input("Gán cho Dự án:", placeholder="Ví dụ: Marketing", key="ai_splitter_project")
             
@@ -882,7 +905,7 @@ with tab_ai:
         st.info("💡 Mở khóa bản **PLUS** để kích hoạt tính năng chuyển đổi các Huấn luyện viên AI chuyên nghiệp (AI Coach Personas) giúp tối ưu hóa tư duy làm việc!")
         current_instruction_system = "Bạn là SoloMind, một trợ lý thông minh vui vẻ, chuyên gia trong việc hỗ trợ năng suất cá nhân."
 
-    if HAS_AI and api_key_input:
+    if HAS_AI and st.session_state.get("gemini_key"):
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
             
@@ -1076,7 +1099,7 @@ with tab_plus:
                 <h4 style="color: #a855f7;">🌌 Cosmic VIP Lifetime</h4>
                 <h1 style="font-size: 32px; margin: 15px 0;">399.000đ<span style="font-size:14px; color:#64748b;">/vĩnh viễn</span></h1>
                 <p style="font-size: 13px; color: #cbd5e1; min-height: 120px; line-height: 1.6;">
-                    • Sở hữu vĩnh viễn toàn bộ tính năng<br>
+                    • Sơ hữu vĩnh viễn toàn bộ tính năng<br>
                     • Miễn phí cập nhật tất cả phiên bản tiếp theo<br>
                     • Nhận biểu tượng huy hiệu VIP độc nhất<br>
                     • Ưu tiên xử lý băng thông AI tốc độ cao<br>
@@ -1108,7 +1131,7 @@ with tab_plus:
             
             payos_client = get_payos_client()
             
-            # Nếu giá trị đơn hàng bằng 0 (Áp dụng FREEPLUS)
+            # Nếu giao dịch của bạn bằng 0 (Áp dụng FREEPLUS)
             if final_price == 0:
                 st.info("🎁 Giao dịch của bạn có giá trị 0đ. Bạn có thể kích hoạt trực tiếp miễn phí.")
                 if st.button("🚀 Kích Hoạt Miễn Phí Ngay", type="primary", use_container_width=True):
