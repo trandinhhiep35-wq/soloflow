@@ -32,8 +32,15 @@ if "pomodoro_status" not in st.session_state:
 if "payos_order_id" not in st.session_state:
     st.session_state.payos_order_id = None
 
+# 🌟 CẬP NHẬT: Khởi tạo cơ sở dữ liệu tài khoản ảo để đồng bộ Sandbox thật
+if "users_db" not in st.session_state:
+    st.session_state.users_db = {
+        "soloflow": "123456",  # Tài khoản admin mặc định
+        "admin": "admin123"
+    }
+
 # ==========================================
-# MÔ-ĐUN 1: HỆ THỐNG ĐĂNG NHẬP / ĐĂNG KÝ (AUTH)
+# MÔ-ĐUN 1: HỆ THỐNG ĐĂNG NHẬP / ĐĂNG KÝ THẬT
 # ==========================================
 def render_login_page():
     st.markdown("<h1 style='text-align: center; color: #2563eb;'>🚀 soloflowOS v6.0</h1>", unsafe_allow_html=True)
@@ -52,41 +59,54 @@ def render_login_page():
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
                 if st.button("Đăng Nhập Hệ Thống", type="primary", use_container_width=True):
-                    if user == "soloflow" and password == "123456":
+                    # 🌟 CẬP NHẬT: Kiểm tra tài khoản trong Database hệ thống thay vì fix cứng
+                    if user in st.session_state.users_db and st.session_state.users_db[user] == password:
                         st.session_state.logged_in = True
-                        st.session_state.username = "soloflow_master"
-                        st.success("Đăng nhập thành công! Đang tải dữ liệu...")
+                        st.session_state.username = user
+                        st.success(f"Đăng nhập thành công! Xin chào {user}...")
                         time.sleep(1)
                         st.rerun()
                     elif user == "" or password == "":
                         st.warning("Vui lòng điền đầy đủ thông tin.")
                     else:
-                        st.error("Sai tài khoản hoặc mật khẩu! (Thử: soloflow / 123456)")
+                        st.error("Sai tài khoản hoặc mật khẩu! Vui lòng kiểm tra lại.")
             with col_btn2:
                 st.button("Quên mật khẩu?", use_container_width=True)
                 
         with tab_register:
             st.write("Tạo tài khoản soloflowOS mới để đồng bộ hóa dữ liệu đám mây.")
-            st.text_input("Họ và tên", placeholder="Nguyễn Văn A")
-            st.text_input("Địa chỉ Email", placeholder="example@gmail.com")
-            st.text_input("Tạo mật khẩu mới", type="password", placeholder="Tối thiểu 6 ký tự")
-            st.text_input("Xác nhận mật khẩu", type="password", placeholder="Trùng khớp mật khẩu trên")
-            st.checkbox("Tôi đồng ý với các Điều khoản dịch vụ và Chính sách bảo mật của soloflowOS.")
-            if st.button("Đăng Ký Ngay", use_container_width=True):
-                st.info("Tính năng đăng ký đang ghi nhận dữ liệu Sandbox!")
+            reg_name = st.text_input("Họ và tên", placeholder="Nguyễn Văn A")
+            reg_user = st.text_input("Tên đăng nhập mới", placeholder="Username viết liền không dấu")
+            reg_pass = st.text_input("Tạo mật khẩu", type="password", placeholder="Tối thiểu 6 ký tự")
+            reg_pass_conf = st.text_input("Xác nhận mật khẩu", type="password", placeholder="Trùng khớp mật khẩu trên")
+            agree = st.checkbox("Tôi đồng ý với các Điều khoản dịch vụ và Chính sách bảo mật.")
+            
+            if st.button("Đăng Ký Ngay", use_container_width=True, type="primary"):
+                if not reg_user.strip() or not reg_pass.strip() or not reg_name.strip():
+                    st.error("❌ Vui lòng không để trống bất kỳ trường thông tin nào!")
+                elif reg_pass != reg_pass_conf:
+                    st.error("❌ Mật khẩu xác nhận không trùng khớp!")
+                elif reg_user in st.session_state.users_db:
+                    st.error("❌ Tên đăng nhập này đã tồn tại trên Sandbox soloflowOS!")
+                elif not agree:
+                    st.warning("⚠️ Bạn cần tích chọn đồng ý với Điều khoản dịch vụ.")
+                else:
+                    # 🌟 CẬP NHẬT: Thực hiện đồng bộ thêm tài khoản mới vào DB Sandbox
+                    st.session_state.users_db[reg_user] = reg_pass
+                    
+                    with st.spinner("Đang đồng bộ cấu trúc tài khoản lên bộ nhớ Sandbox..."):
+                        time.sleep(1.5)
+                        
+                    st.success(f"🎉 Đăng ký thành công tài khoản [{reg_user}]!")
+                    st.info("👉 Hãy bấm chuyển qua tab **🔒 Đăng Nhập** ở phía trên để vào hệ thống.")
 
 # ==========================================
 # MÔ-ĐUN 2: THƯ VIỆN KẾT NỐI PAYOS (MOCK INTEGRATION)
 # ==========================================
 def generate_payos_link(amount: int, order_id: str):
-    """
-    Giả lập thuật toán mã hóa và tạo link thanh toán của PayOS API 
-    Sử dụng Checksum SHA256 dựa trên Client ID và API Key
-    """
     payos_client_id = "soloflow_pos_cid_9921"
     payos_api_key = "soloflow_pos_key_xyz8821"
     
-    # Tạo chuỗi dữ liệu ký số theo chuẩn PayOS
     raw_data = f"amount={amount}&cancelUrl=https://soloflow.streamlit.app&description=UpgradePlus&orderCode={order_id}&returnUrl=https://soloflow.streamlit.app"
     signature = hmac.new(payos_api_key.encode(), raw_data.encode(), hashlib.sha256).hexdigest()
     
@@ -97,7 +117,6 @@ def generate_payos_link(amount: int, order_id: str):
 # MÔ-ĐUN 3: CÁC TÍNH NĂNG SIÊU ĐẶC BIỆT (SUPER FEATURES)
 # ==========================================
 def feature_ai_bottleneck_predictor(task_text):
-    """SIÊU TÍNH NĂNG 1: Dự đoán rủi ro và điểm nghẽn dự án"""
     st.markdown("#### 🧠 Siêu Tính Năng: AI Bottleneck & Risk Predictor")
     st.caption("Thuật toán Deep Learning giả lập phân tích dữ liệu lịch sử để tìm điểm nghẽn tiến độ.")
     
@@ -116,7 +135,6 @@ def feature_ai_bottleneck_predictor(task_text):
         st.caption("Cấu hình sitemap tự động giảm tải công việc thủ công.")
 
 def feature_pomodoro_timer():
-    """SIÊU TÍNH NĂNG 2: Đồng hồ đếm ngược Pomodoro đồng bộ công việc"""
     st.markdown("#### ⏱️ Đồng Hồ Tập Trung Pomodoro Integration")
     
     c1, c2, c3 = st.columns([2, 1, 1])
@@ -132,7 +150,6 @@ def feature_pomodoro_timer():
             st.toast("Đã dừng đồng hồ.")
 
 def feature_kanban_simulator():
-    """SIÊU TÍNH NĂNG 3: Bảng Kanban tiến độ trực quan"""
     st.markdown("#### 📋 Bảng Thống Kê Kanban Tiến Độ ( soloflow-Kanban )")
     kb_todo, kb_doing, kb_done = st.columns(3)
     
@@ -153,7 +170,6 @@ def feature_kanban_simulator():
 # MÔ-ĐUN 4: CÁC VIEW GIAO DIỆN CHỨC NĂNG
 # ==========================================
 def render_dashboard():
-    # MENU SIDEBAR SAU KHI ĐĂNG NHẬP
     st.sidebar.subheader(f"👋 Chào, {st.session_state.username}!")
     sub_menu = st.sidebar.radio(
         "Phân hệ ứng dụng:",
@@ -181,7 +197,7 @@ def render_dashboard():
         c_left, c_right = st.columns([1, 1.8])
         with c_left:
             st.subheader("⚙️ Thông Số Đầu Vào")
-            main_task = st.text_area("Mục tiêu lớn cần bẻ gãy:", value="Xây dựng website bán hàng chuẩn SEO bằng Django trong 1 tuần", height=80)
+            main_task = st.text_area("Mục tiêu lớn cần bẻ gãy:", value="Xãy dựng website bán hàng chuẩn SEO bằng Django trong 1 tuần", height=80)
             
             ai_mode = st.selectbox("🎯 Mô hình phân rã:", ["Agile Sprints Optimizer", "Waterfall Step-by-Step", "Mindmap Node Generator"])
             depth = st.slider("🔍 Độ sâu phân tầng lớp con:", 1, 5, 2)
@@ -220,7 +236,7 @@ def render_dashboard():
                 st.info("Nhập thông tin bên trái và bấm nút kích hoạt để xem kết quả sơ đồ.")
 
     # ------------------------------------------
-    # CHỨC NĂNG 2: DASHBOARD & PHÂN TÍCH ĐA DẠNG
+    # CHỨC NĂNG 2: DASHBOARD & PHÂN TÍCH
     # ------------------------------------------
     elif sub_menu == "📊 Dashboard & Phân Tích":
         st.title("📊 Trung Tâm Phân Tích Chỉ Số Dự Án")
@@ -249,7 +265,7 @@ def render_dashboard():
         
         st.write("---")
         st.subheader("Cập nhật thông tin nhận diện sinh trắc học")
-        st.text_input("Tên định danh lập trình viên:", value="soloflow Developer")
+        st.text_input("Tên định danh lập trình viên:", value=st.session_state.username)
         st.text_input("Mã định danh hệ thống (UUID):", value="SFL-9921-X85-2026", disabled=True)
         st.selectbox("Ngôn ngữ ưu tiên của AI:", ["Tiếng Việt", "English", "日本語"])
         if st.button("Đồng Bộ Hóa Hồ Sơ", type="primary"):
@@ -334,7 +350,6 @@ def render_dashboard():
             st.write("---")
             st.markdown("### 💰 Số tiền cần thanh toán: <span style='color:red;'>99.000 VNĐ</span>", unsafe_allow_html=True)
             
-            # Khởi tạo tạo link PayOS thật dựa trên cấu trúc
             if st.button("🔗 Khởi Tạo Link Thanh Toán Tự Động Qua PayOS", type="primary", use_container_width=True):
                 random_code = str(random.randint(100000, 999999))
                 url, sig = generate_payos_link(99000, random_code)
@@ -344,7 +359,6 @@ def render_dashboard():
         with col_qr:
             st.subheader("📲 Quét Mã QR Qua Ứng Dụng Ngân Hàng (VietQR)")
             if st.session_state.payos_order_id is not None:
-                # Thiết kế Mockup giao diện mã QR chuyển khoản chuẩn PayOS chuyên nghiệp
                 st.markdown(f"""
                 <div style='border: 2px dashed #2563eb; padding: 20px; border-radius: 10px; text-align: center; background-color: #f0f7ff;'>
                     <p style='font-weight: bold; color: #2563eb;'>CỔNG THANH TOÁN ĐỐI TÁC CHÍNH THỨC - PAYOS</p>
@@ -356,7 +370,7 @@ def render_dashboard():
                 """, unsafe_allow_html=True)
                 
                 st.write("")
-                if st.button("🔄 Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái PayOS Webhook", use_container_width=True):
+                if st.button("🔄 Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thế PayOS Webhook", use_container_width=True):
                     with st.spinner("Đang truy vấn API PayOS xem tiền đã vào tài khoản chưa..."):
                         time.sleep(2)
                     st.session_state.tier = "PLUS Active"
