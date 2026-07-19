@@ -16,6 +16,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# --- KIỂM TRA THƯ VIỆN PAYOS CHUYÊN NGHIỆP ---
+try:
+    from payos import PayOS
+    from payos.types import CreatePaymentLinkRequest
+    HAS_PAYOS = True
+except ImportError:
+    HAS_PAYOS = False
+
 # --- ĐƯỜNG DẪN CƠ SỞ DỮ LIỆU ---
 DB_FILE = "tasks.json"
 USER_FILE = "users.json"
@@ -226,6 +234,29 @@ def inject_premium_css(theme_choice="Deep Obsidian"):
         }}
         </style>
     """, unsafe_allow_html=True)
+
+# --- KHỞI TẠO ĐỐI TƯỢNG PAYOS AN TOÀN ---
+def get_payos_client():
+    """Tự động kiểm tra cấu hình Secrets và môi trường để khởi tạo đối tượng PayOS."""
+    if not HAS_PAYOS:
+        return None
+    try:
+        # Tìm trong Streamlit Secrets trước
+        client_id = st.secrets.get("PAYOS_CLIENT_ID")
+        api_key = st.secrets.get("PAYOS_API_KEY")
+        checksum_key = st.secrets.get("PAYOS_CHECKSUM_KEY")
+        
+        # Nếu chưa có, nạp từ biến môi trường máy local
+        if not client_id:
+            client_id = os.getenv("PAYOS_CLIENT_ID")
+            api_key = os.getenv("PAYOS_API_KEY")
+            checksum_key = os.getenv("PAYOS_CHECKSUM_KEY")
+            
+        if client_id and api_key and checksum_key:
+            return PayOS(client_id=client_id, api_key=api_key, checksum_key=checksum_key)
+    except Exception:
+        pass
+    return None
 
 def hash_password(password: str) -> str:
     """Băm bảo mật mật khẩu bằng thuật toán SHA-256."""
@@ -739,8 +770,6 @@ with tab_tasks:
     st.markdown("### 🗃️ Ma trận Tập trung Eisenhower 2.0")
     e_do = [t for t in active_tasks if t.get("category") == "Làm ngay" and t["status"] != "Đã xong"]
     e_schedule = [t for t in active_tasks if t.get("category") == "Lên lịch" and t["status"] != "Đã xong"]
-    e_delegate = [t for t in active_tasks if t.get("category") == "Ủy quyền" and t["status"] != "Đã xong"]
-    e_eliminate = [t for t in active_tasks if t.get("category") == "Loại bỏ" and t["status"] != "Đã xong"]
     
     st.markdown("""
     <div class="eisenhower-grid">
@@ -996,7 +1025,7 @@ with tab_profile:
                         st.success("🎉 Đã cập nhật mật khẩu mới thành công!")
 
 # ==========================================
-# TAB 5: ĐẶC QUYỀN VÀ TRÌNH MUA SẮM SOLOFLOW PLUS VIP (FLAGSHIP PREMIUM REGISTRY)
+# TAB 5: ĐẶC QUYỀN VÀ TRÌNH MUA SẮM SOLOFLOW PLUS VIP (PAYOS INTEGRATED GATEWAY)
 # ==========================================
 with tab_plus:
     st.markdown("<h1 style='text-align: center; color: #eab308; margin-bottom: 5px;'>💎 SoloFlow PLUS - Sức Mạnh Vô Song</h1>", unsafe_allow_html=True)
@@ -1039,6 +1068,7 @@ with tab_plus:
                 st.session_state["payment_package"] = "Monthly Premium (79.000đ)"
                 st.session_state["payment_price"] = 79000
                 st.session_state["payment_step"] = "pay"
+                st.rerun()
                 
         with col_p3:
             st.markdown("""
@@ -1058,11 +1088,11 @@ with tab_plus:
                 st.session_state["payment_package"] = "Cosmic VIP Lifetime (399.000đ)"
                 st.session_state["payment_price"] = 399000
                 st.session_state["payment_step"] = "pay"
+                st.rerun()
 
-        # TRÌNH GIẢ LẬP THANH TOÁN PLUS KHÉO LÉO CHUYÊN NGHIỆP
+        # TRÌNH THANH TOÁN PLUS KHÉO LÉO CHUYÊN NGHIỆP TÍCH HỢP PAYOS THẬT
         if "payment_step" in st.session_state and st.session_state["payment_step"] == "pay":
             st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown("### 💳 Hệ thống thanh toán hóa đơn an toàn (VietQR Simulated Gateway)")
             
             p_price = st.session_state["payment_price"]
             p_package = st.session_state["payment_package"]
@@ -1076,34 +1106,113 @@ with tab_plus:
             
             final_price = max(0, p_price - discount)
             
-            col_qr1, col_qr2 = st.columns([1, 2])
-            with col_qr1:
-                # Tạo ảnh VietQR giả lập
-                st.image(
-                    f"https://img.vietqr.io/image/970415-102555666888-compact2.jpg?amount={final_price}&addInfo=SOLOFLOW%20VIP%20{current_user}&accountName=SoloFlow%20Technologies",
-                    caption="Dùng ứng dụng ngân hàng quét để giả lập chuyển khoản trực tiếp"
-                )
-            with col_qr2:
-                st.write(f"💼 **Gói dịch vụ:** `{p_package}`")
-                st.write(f"💵 **Giá trị gốc:** `{p_price:,} đ`")
-                st.write(f"📉 **Khấu trừ ưu đãi:** `{discount:,} đ`")
-                st.write(f"🚨 **Tổng số tiền thanh toán thực tế:** `{final_price:,} đ`")
-                st.markdown("<small style='color: #64748b;'>Hệ thống đang hoạt động ở chế độ mô phỏng Sandbox. Bạn có thể bấm xác thực ngay mà không cần giao dịch thực tế.</small>", unsafe_allow_html=True)
+            payos_client = get_payos_client()
+            
+            # Nếu giá trị đơn hàng bằng 0 (Áp dụng FREEPLUS)
+            if final_price == 0:
+                st.info("🎁 Giao dịch của bạn có giá trị 0đ. Bạn có thể kích hoạt trực tiếp miễn phí.")
+                if st.button("🚀 Kích Hoạt Miễn Phí Ngay", type="primary", use_container_width=True):
+                    all_users[current_user]["is_plus"] = True
+                    save_users(all_users)
+                    st.session_state["payment_step"] = "success"
+                    st.balloons()
+                    st.rerun()
+            
+            # Nếu có PayOS và không miễn phí -> Chạy PayOS Thật
+            elif payos_client is not None:
+                st.markdown("### 💳 Cổng Thanh Toán PayOS Tự Động (Giao Dịch Thật 100%)")
+                st.info("Hệ thống sẽ tự động tạo hóa đơn thanh toán thông qua cổng liên ngân hàng Napas 24/7 của PayOS.")
                 
-                # Tiến hành kiểm tra và xác minh ngân hàng
-                if st.button("✅ Tôi Đã Chuyển Khoản - Bấm Để Xác Thực Giao Dịch", type="primary", use_container_width=True):
-                    with st.spinner("Đang kết nối tới cổng thanh toán ngân hàng liên kết, vui lòng chờ..."):
-                        progress_bar = st.progress(0)
-                        for percent in range(100):
-                            time.sleep(0.015)
-                            progress_bar.progress(percent + 1)
+                # Kiểm tra xem đã khởi tạo link checkout cho hóa đơn này chưa
+                if "payos_checkout_url" not in st.session_state or st.session_state.get("payos_current_price") != final_price:
+                    with st.spinner("Đang kết nối tới PayOS để khởi tạo mã QR thanh toán..."):
+                        try:
+                            # Tạo mã đơn hàng độc lập bằng timestamp
+                            order_code = int(time.time())
+                            
+                            # Cấu hình dữ liệu thanh toán
+                            payment_data = CreatePaymentLinkRequest(
+                                order_code=order_code,
+                                amount=final_price,
+                                description=f"PLUS {current_user[:10]}",
+                                cancel_url="https://soloflow.streamlit.app/",
+                                return_url="https://soloflow.streamlit.app/"
+                            )
+                            
+                            # Gọi API tạo link
+                            payment_link = payos_client.payment_requests.create(payment_data=payment_data)
+                            
+                            # Lưu vào session
+                            st.session_state["payos_checkout_url"] = payment_link.checkout_url
+                            st.session_state["payos_order_code"] = order_code
+                            st.session_state["payos_current_price"] = final_price
+                        except Exception as e:
+                            st.error(f"Lỗi khởi tạo giao dịch PayOS: {e}. Vui lòng thử lại hoặc liên hệ quản trị viên.")
+                
+                # Hiển thị giao dịch thật
+                if "payos_checkout_url" in st.session_state:
+                    col_real_qr, col_real_info = st.columns([1, 1])
+                    with col_real_qr:
+                        st.write("👉 Nhấp vào liên kết bảo mật dưới đây để truy cập trang quét mã VietQR chính thức:")
+                        st.link_button("🌐 Đi Tới Trang Thanh Toán PayOS (Quét mã VietQR)", st.session_state["payos_checkout_url"], use_container_width=True, type="primary")
+                        st.caption("Trang thanh toán sẽ tự động nhận dạng giao dịch ngân hàng của bạn ngay lập tức.")
+                    with col_real_info:
+                        st.write(f"💼 **Gói đăng ký:** `{p_package}`")
+                        st.write(f"💵 **Số tiền cần thanh toán:** `{final_price:,} VNĐ`")
+                        st.write(f"🔢 **Mã đơn hàng bảo mật:** `#{st.session_state.get('payos_order_code')}`")
                         
-                        # Kích hoạt trạng thái VIP trong Database
-                        all_users[current_user]["is_plus"] = True
-                        save_users(all_users)
-                        st.session_state["payment_step"] = "success"
-                        st.balloons()
-                        st.rerun()
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🔄 Tôi Đã Chuyển Khoản - Bấm Để Xác Thực Giao Dịch", use_container_width=True):
+                            with st.spinner("Đang kết nối trực tiếp đến PayOS để truy vấn lịch sử ngân hàng..."):
+                                try:
+                                    order_info = payos_client.payment_requests.get(st.session_state["payos_order_code"])
+                                    if order_info.status == "PAID":
+                                        all_users[current_user]["is_plus"] = True
+                                        save_users(all_users)
+                                        st.session_state["payment_step"] = "success"
+                                        # Xóa session tạm
+                                        del st.session_state["payos_checkout_url"]
+                                        del st.session_state["payos_order_code"]
+                                        st.balloons()
+                                        st.rerun()
+                                    else:
+                                        st.warning("⚠️ Hệ thống chưa nhận thấy giao dịch hoàn tất từ ngân hàng. Hãy đợi 5-10 giây rồi bấm kiểm tra lại nhé!")
+                                except Exception as e:
+                                    st.error(f"Lỗi kiểm tra giao dịch: {e}")
+            
+            # Fallback sang Sandbox giả lập (Nếu chưa điền API keys hoặc lỗi thư viện)
+            else:
+                st.markdown("### 💳 Hệ thống thanh toán hóa đơn an toàn (VietQR Simulated Sandbox)")
+                st.warning("⚠️ Chưa cấu hình API Keys của PayOS trong mục Secrets. Hệ thống đang tự động chuyển về chế độ chạy Sandbox (Mô phỏng).")
+                
+                col_qr1, col_qr2 = st.columns([1, 2])
+                with col_qr1:
+                    # Tạo ảnh VietQR giả lập
+                    st.image(
+                        f"https://img.vietqr.io/image/970415-102555666888-compact2.jpg?amount={final_price}&addInfo=SOLOFLOW%20VIP%20{current_user}&accountName=SoloFlow%20Technologies",
+                        caption="Dùng ứng dụng ngân hàng quét để giả lập chuyển khoản trực tiếp"
+                    )
+                with col_qr2:
+                    st.write(f"💼 **Gói dịch vụ:** `{p_package}`")
+                    st.write(f"💵 **Giá trị gốc:** `{p_price:,} đ`")
+                    st.write(f"📉 **Khấu trừ ưu đãi:** `{discount:,} đ`")
+                    st.write(f"🚨 **Tổng số tiền thanh toán thực tế:** `{final_price:,} đ`")
+                    st.markdown("<small style='color: #64748b;'>Hệ thống đang hoạt động ở chế độ mô phỏng Sandbox. Bạn có thể bấm xác thực ngay mà không cần giao dịch thực tế.</small>", unsafe_allow_html=True)
+                    
+                    # Tiến hành kiểm tra và xác minh ngân hàng
+                    if st.button("✅ Tôi Đã Chuyển Khoản - Bấm Để Xác Thực Giao Dịch", type="primary", use_container_width=True):
+                        with st.spinner("Đang kết nối tới cổng thanh toán ngân hàng liên kết, vui lòng chờ..."):
+                            progress_bar = st.progress(0)
+                            for percent in range(100):
+                                time.sleep(0.01)
+                                progress_bar.progress(percent + 1)
+                            
+                            # Kích hoạt trạng thái VIP trong Database
+                            all_users[current_user]["is_plus"] = True
+                            save_users(all_users)
+                            st.session_state["payment_step"] = "success"
+                            st.balloons()
+                            st.rerun()
 
         if "payment_step" in st.session_state and st.session_state["payment_step"] == "success":
             st.success("🎉 CHÚC MỪNG: Bạn đã kích hoạt thành công quyền sở hữu SoloFlow Plus Thượng Hạng!")
@@ -1139,13 +1248,11 @@ with tab_plus:
                 vol_camp = st.slider("Tiếng củi cháy tách bách (Campfire):", 0, 100, 10)
                 
             if st.button("🔊 Áp dụng và Bật Trình Hoà Âm 3D Ambient", use_container_width=True):
-                # Nhúng HTML5 Audio Synth động phát sinh tần số để phát sóng não Binaural mà không cần file MP3
                 st.session_state.binaural_playing = True
                 audio_script = f"""
                 <script>
                 window.audioCtx = window.audioCtx || new (window.AudioContext || window.webkitAudioContext)();
                 
-                // Hàm tạo oscillator phát sóng âm
                 function playBinaural(freq1, freq2, vol) {{
                     if(vol <= 0) return;
                     let merger = window.audioCtx.createChannelMerger(2);
@@ -1171,16 +1278,13 @@ with tab_plus:
                     window.audioCtx.resume();
                 }}
                 
-                // Chạy sóng Alpha (340Hz - 352Hz)
                 playBinaural(340, 352, {vol_alpha});
-                // Chạy sóng Theta (150Hz - 156Hz)
                 playBinaural(150, 156, {vol_theta});
                 </script>
                 """
                 st.markdown(audio_script, unsafe_allow_html=True)
                 st.success("🎶 Đang phát sóng hoà âm Binaural an toàn chất lượng cao. Đeo tai nghe để cảm nhận hiệu ứng tốt nhất!")
                 
-            # Cung cấp một số luồng nhạc Lofi Pro chất lượng cao dự phòng
             st.markdown("<br><b>Hoặc lựa chọn luồng phát sóng Cosmic Chill Pro:</b>", unsafe_allow_html=True)
             youtube_ambient_id = st.selectbox("Chọn Kênh Âm Nhạc Không Gian:", [
                 "Lofi Hip Hop Live - Radio Chill Beats (Lofi Girl)",
@@ -1205,7 +1309,6 @@ with tab_plus:
                     st.error("Vui lòng nhập mục tiêu lớn!")
                 else:
                     with st.spinner("AI đang tính toán cấu trúc sơ đồ cây..."):
-                        # Gọi AI thiết kế cấu trúc sơ đồ cây
                         system_instr_mind = (
                             "Bạn là kiến trúc sư bản đồ tư duy. Nhận vào mục tiêu lớn, phân rã nó thành cấu trúc dạng cây gồm 1 nút gốc, tối thiểu 3 nút con cấp 1, và mỗi nút con cấp 1 có tối thiểu 2 nút con cấp 2. "
                             "Trả về đúng định dạng JSON chuẩn. Ví dụ:\n"
@@ -1222,7 +1325,6 @@ with tab_plus:
                         mind_response = call_gemini(mind_goal, system_instruction=system_instr_mind)
                         try:
                             mind_data = parse_gemini_json(mind_response)
-                            # Hiển thị cấu trúc cây sơ đồ bằng mã HTML/CSS siêu đẹp
                             branches_html = ""
                             for branch in mind_data.get("branches", []):
                                 leafs_html = "".join([f"<li style='color:#a855f7; margin:5px 0;'>🍀 {leaf}</li>" for leaf in branch.get("leafs", [])])
