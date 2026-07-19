@@ -1,281 +1,378 @@
 import streamlit as st
 import time
-import pandas as pd
+import datetime
+import random
+import hmac
+import hashlib
+import json
 
 # ==========================================
-# CẤU HÌNH HỆ THỐNG TOÀN CỤC (soloflowOS v5.5)
+# CẤU HÌNH HỆ THỐNG TOÀN CỤC & THEME TRỰC QUAN
 # ==========================================
 st.set_page_config(
-    page_title="soloflowOS v5.5 - AI Task Decomposer", 
-    page_icon="⚡", 
-    layout="wide"
+    page_title="soloflowOS v6.0 - Ultimate AI OS",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Khởi tạo trạng thái bộ nhớ hệ thống (Session State)
+# KHỞI TẠO BỘ NHỚ LƯU TRỮ TRẠNG THÁI (SESSION STATE)
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "username" not in st.session_state:
+    st.session_state.username = ""
 if "tier" not in st.session_state:
     st.session_state.tier = "Free User"
 if "tokens_left" not in st.session_state:
     st.session_state.tokens_left = 5
-if "history_tasks" not in st.session_state:
-    st.session_state.history_tasks = []
-
-# --- SIDEBAR ĐIỀU HƯỚNG ---
-st.sidebar.title("🚀 soloflowOS")
-st.sidebar.subheader("Hệ Điều Hành Phân Rã Công Việc")
-
-menu = st.sidebar.radio(
-    "Trung tâm điều khiển:",
-    [
-        "📋 Rã Công Việc (AI)", 
-        "👤 Hồ Sơ Cá Nhân (Profile)", 
-        "⚙️ Cài Đặt Hệ Thống (Settings)", 
-        "⚡ Sức Mạnh Bản PLUS", 
-        "💳 Cổng Thanh Toán Plus"
-    ]
-)
-
-st.sidebar.write("---")
-# Hiển thị trạng thái tài khoản thời gian thực trên Sidebar
-if st.session_state.tier == "PLUS Active":
-    st.sidebar.success("👑 Tài khoản: PLUS PREMIUM")
-else:
-    st.sidebar.info(f"⚡ Tài khoản: Free User ({st.session_state.tokens_left} lượt còn lại)")
-
-st.sidebar.caption(f"Phiên bản hiện tại: **v5.5**")
-st.sidebar.caption("Phát triển bởi soloflow Team © 2026")
+if "tasks_db" not in st.session_state:
+    st.session_state.tasks_db = []
+if "pomodoro_status" not in st.session_state:
+    st.session_state.pomodoro_status = "Đang dừng"
+if "payos_order_id" not in st.session_state:
+    st.session_state.payos_order_id = None
 
 # ==========================================
-# 1. GIAO DIỆN CHÍNH: RÃ CÔNG VIỆC & TÍNH NĂNG ĐẶC BIỆT
+# MÔ-ĐUN 1: HỆ THỐNG ĐĂNG NHẬP / ĐĂNG KÝ (AUTH)
 # ==========================================
-if menu == "📋 Rã Công Việc (AI)":
-    st.title("📋 Trung Tâm Phân Rã Công Việc Thông Minh")
-    st.write("Giải pháp bẻ gãy các dự án phức tạp thành hành động thực tế bằng AI.")
+def render_login_page():
+    st.markdown("<h1 style='text-align: center; color: #2563eb;'>🚀 soloflowOS v6.0</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center; color: #64748b;'>Hệ Điều Hành Quản Trị & Phân Rã Dự Án Tự Động</h3>", unsafe_allow_html=True)
     
-    # Tạo Layout chia làm 2 cột: Cột trái nhập liệu & cấu hình nâng cao, Cột phải hiển thị kết quả
-    col_input, col_output = st.columns([1, 2])
+    _, col_center, _ = st.columns([1, 1.5, 1])
     
-    with col_input:
-        st.subheader("🛠️ Cấu hình bộ rã")
-        task_input = st.text_area(
-            "Nhập mục tiêu lớn hoặc dự án cần xử lý:", 
-            value="Xây dựng website bán hàng chuẩn SEO bằng Django trong 1 tuần",
-            height=100
-        )
+    with col_center:
+        tab_login, tab_register = st.tabs(["🔒 Đăng Nhập", "📝 Đăng Ký Tài Khoản"])
         
-        # --- CÁC TÍNH NĂNG ĐẶC BIỆT VÀ CẦN THIẾT CHO NGƯỜI DÙNG ---
-        ai_style = st.selectbox(
-            "🎯 Phong cách phân tách của AI:",
-            ["Chi tiết từng bước (Step-by-step)", "Tổng quan tối giản (Minimalist)", "Học thuật / Nghiên cứu chuyên sâu"]
-        )
-        
-        depth_level = st.slider("🔍 Độ sâu phân rã (Lớp công việc con):", 1, 5, 2)
-        
-        col_date, col_priority = st.columns(2)
-        with col_date:
-            deadline = st.date_input("📅 Hạn chót dự án:")
-        with col_priority:
-            target_focus = st.selectbox("🔥 Trọng tâm tối ưu:", ["Tốc độ hoàn thành", "Chất lượng sản phẩm", "Tiết kiệm chi phí"])
+        with tab_login:
+            st.write("Chào mừng quay trở lại! Vui lòng nhập thông tin hệ thống.")
+            user = st.text_input("Tên đăng nhập / Email", key="login_user", placeholder="soloflow_dev")
+            password = st.text_input("Mật khẩu", type="password", key="login_pass", placeholder="••••••••")
             
-        st.write("---")
-        # Nút kích hoạt thuật toán rã việc
-        btn_run = st.button("🪄 Bắt Đầu Phân Rã Ngay", type="primary", use_container_width=True)
-        
-    with col_output:
-        st.subheader("📊 Sơ đồ lộ trình chi tiết từ soloflowOS")
-        
-        if btn_run:
-            if not task_input.strip():
-                st.warning("Vui lòng không để trống mục tiêu cần phân rã!")
-            elif depth_level > 2 and st.session_state.tier == "Free User":
-                st.error("❌ Giới hạn quyền hạn! Độ sâu phân rã từ tầng lớp cấp 3 trở lên yêu cầu nâng cấp lên phiên bản **PLUS**.")
-                st.info("💡 Hãy chọn độ sâu <= 2 hoặc chuyển sang tab **Nâng Cấp PLUS** để mở khóa.")
-            elif st.session_state.tier == "Free User" and st.session_state.tokens_left <= 0:
-                st.error("❌ Bạn đã hết lượt dùng AI miễn phí trong ngày! Vui lòng nâng cấp bản PLUS để dùng vô hạn.")
-            else:
-                # Trừ token nếu là tài khoản free
-                if st.session_state.tier == "Free User":
-                    st.session_state.tokens_left -= 1
-                    
-                # Hiệu ứng Spinner của Streamlit
-                with st.spinner(f"Trợ lý AI đang áp dụng thuật toán '{ai_style}' để xử lý dữ liệu..."):
-                    time.sleep(2)
-                st.success(f"Đã phân rã thành công dự án theo trọng tâm: {target_focus}!")
-                
-                # Render cây công việc chi tiết dựa theo cấu hình người dùng nhập
-                with st.expander("📍 Giai đoạn 1: Khởi tạo & Thiết lập nền móng kiến trúc (Ngày 1-2)", expanded=True):
-                    st.checkbox("Phân tích yêu cầu hệ thống và lập sơ đồ luồng dữ liệu (Dataflow Diagram)")
-                    st.checkbox("Thiết lập môi trường ảo Python Virtualenv & Cài đặt Django/PostgreSQL")
-                    if depth_level >= 2:
-                        st.caption("↳ *Lớp con cấp 2:* Cấu hình các biến môi trường bảo mật `.env` và file `settings.py`")
-                        
-                with st.expander("📍 Giai đoạn 2: Xây dựng các tính năng Core & Logic Backend (Ngày 3-5)", expanded=True):
-                    st.checkbox("Tạo Models cho Cơ sở dữ liệu Sản phẩm, Danh mục và Người dùng")
-                    st.checkbox("Viết Views và APIs xử lý nghiệp vụ Giỏ hàng (Cart) và Đặt hàng (Checkout)")
-                    st.checkbox("Tích hợp hệ thống quản trị admin-panel để quản lý kho hàng")
-                    
-                with st.expander("📍 Giai đoạn 3: Tối ưu SEO, Giao diện & Triển khai Đóng gói (Ngày 6-7)", expanded=True):
-                    st.checkbox("Xây dựng giao diện Responsive tương thích mọi thiết bị di động")
-                    st.checkbox("Tối ưu hóa các thẻ Heading, cấu hình file Sitemap.xml và Robots.txt chuẩn SEO")
-                
-                # Tính năng đặc biệt: Xuất dữ liệu
-                st.write("")
-                col_exp1, col_exp2 = st.columns(2)
-                with col_exp1:
-                    st.button("📥 Xuất lộ trình sang File Excel/CSV", use_container_width=True)
-                with col_exp2:
-                    if st.session_state.tier == "PLUS Active":
-                        st.button("🗺️ Xuất sơ đồ tư duy Mindmap (XMind/PDF)", type="secondary", use_container_width=True)
+            col_btn1, col_btn2 = st.columns(2)
+            with col_btn1:
+                if st.button("Đăng Nhập Hệ Thống", type="primary", use_container_width=True):
+                    if user == "soloflow" and password == "123456":
+                        st.session_state.logged_in = True
+                        st.session_state.username = "soloflow_master"
+                        st.success("Đăng nhập thành công! Đang tải dữ liệu...")
+                        time.sleep(1)
+                        st.rerun()
+                    elif user == "" or password == "":
+                        st.warning("Vui lòng điền đầy đủ thông tin.")
                     else:
-                        st.button("🗺️ Xuất Mindmap (Yêu cầu bản PLUS)", disabled=True, use_container_width=True)
-        else:
-            st.info("Chưa có dữ liệu xử lý. Vui lòng thiết lập cấu hình ở cột bên trái và bấm 'Bắt Đầu Phân Rã Ngay'.")
-
-# ==========================================
-# 2. GIAO DIỆN HỒ SƠ NGƯỜI DÙNG (PROFILE)
-# ==========================================
-elif menu == "👤 Hồ Sơ Cá Nhân (Profile)":
-    st.title("👤 Trung Tâm Hồ Sơ Người Dùng")
-    st.write("Quản lý thông tin cá nhân và xem các chỉ số hiệu suất làm việc của bạn.")
-    
-    # Thiết lập layout dạng thẻ (Cards) bằng hàng và cột
-    col_p1, col_p2, col_p3 = st.columns(3)
-    with col_p1:
-        st.metric(label="Gói dịch vụ hiện tại", value=st.session_state.tier)
-    with col_p2:
-        if st.session_state.tier == "PLUS Active":
-            st.metric(label="Lượt gọi trợ lý AI", value="Vô hạn (Unlimited)")
-        else:
-            st.metric(label="Lượt gọi AI miễn phí còn lại", value=f"{st.session_state.tokens_left} / 5")
-    with col_p3:
-        st.metric(label="Hiệu suất rã việc chính xác", value="98.4 %")
-        
-    st.write("---")
-    st.subheader("Thông tin định danh tài khoản")
-    
-    col_form1, col_form2 = st.columns(2)
-    with col_form1:
-        st.text_input("Tên hiển thị:", value="Nguyễn Văn A")
-        st.text_input("Địa chỉ Email đăng ký:", value="nguyenvana@gmail.com", disabled=True)
-    with col_form2:
-        st.text_input("Vai trò / Nghề nghiệp:", value="Nhà phát triển phần mềm độc lập (Solo Developer)")
-        st.selectbox("Múi giờ hệ thống (Timezone):", ["UTC+07:00 (Băng Cốc, Hà Nội, Jakarta)", "UTC+00:00 (London)"])
-        
-    if st.button("💾 Cập nhật thông tin hồ sơ", type="primary"):
-        st.success("Hệ thống soloflowOS đã đồng bộ dữ liệu hồ sơ mới thành công!")
-
-# ==========================================
-# 3. GIAO DIỆN CÀI ĐẶT HỆ THỐNG (SETTINGS)
-# ==========================================
-elif menu == "⚙️ Cài Đặt Hệ Thống (Settings)":
-    st.title("⚙️ Tùy Chỉnh Cấu Hình Hệ Thống")
-    st.write("Cấu hình sâu các thông số hoạt động của lõi phần mềm soloflowOS v5.5.")
-    
-    # Sử dụng Tabs để phân tách các khu vực cài đặt chuyên nghiệp
-    tab_ai, tab_ui, tab_security = st.tabs(["🤖 Cấu Hình Lõi AI", "🎨 Giao Diện & Trải Nghiệm", "🔒 Bảo Mật & Kết Nối"])
-    
-    with tab_ai:
-        st.subheader("AI Engine Linker")
-        selected_model = st.selectbox(
-            "Lựa chọn siêu mô hình LLM để kết nối:",
-            ["soloflow-Core-Engine v1 (Mặc định)", "GPT-4o Advanced Reasoning (PLUS)", "Claude 3.5 Sonnet Vision (PLUS)"]
-        )
-        if "PLUS" in selected_model and st.session_state.tier == "Free User":
-            st.error("⚠️ Mô hình cao cấp này đã bị khóa. Vui lòng nâng cấp tài khoản lên gói PLUS để liên kết.")
-            
-        st.slider("Độ sáng tạo của AI (Temperature):", 0.0, 1.0, 0.3, step=0.1)
-        st.caption("Mức thấp (0.1 - 0.3) giúp AI rã việc logic, thực tế. Mức cao (> 0.7) kích thích ý tưởng đột phá.")
-        
-    with tab_ui:
-        st.subheader("Tùy biến UI/UX")
-        st.checkbox("Tự động cuộn trang khi AI sinh văn bản", value=True)
-        st.checkbox("Gửi thông báo âm thanh khi hoàn thành rã việc lớn", value=False)
-        st.write("💡 *Mẹo thay đổi Dark/Light Mode:* Bản v5.5 tương thích trực tiếp với cài đặt của Streamlit. Bạn chỉ cần nhấn vào biểu tượng 3 chấm ở góc trên cùng bên phải -> Chọn **Settings** -> Điều chỉnh mục **Theme** theo sở thích cá nhân.")
-        
-    with tab_security:
-        st.subheader("Quản lý khóa API liên kết")
-        st.text_input("Nhập OpenAI API Key cá nhân của bạn (Nếu có):", type="password", placeholder="sk-proj-........................")
-        st.caption("Lưu ý: Khóa API cá nhân sẽ được lưu mã hóa ngay tại bộ nhớ trình duyệt (Local Storage) của bạn, đảm bảo an toàn tuyệt đối.")
-
-# ==========================================
-# 4. GIAO DIỆN SỨC MẠNH BẢN PLUS NÂNG CẤP
-# ==========================================
-elif menu == "⚡ Sức MẠNH Bản PLUS":
-    st.title("⚡ soloflowOS v5.5 PLUS - Giải Phóng Sức Mạnh Trợ Lý AI")
-    st.write("Khám phá sự khác biệt vượt trội về hiệu năng và công nghệ xử lý dữ liệu.")
-    
-    # So sánh chi tiết dưới dạng bảng cấu trúc Markdown
-    st.markdown("""
-    ### 📊 Bảng so sánh năng lực xử lý giữa các phiên bản
-    
-    | Tiêu chí kỹ thuật và tính năng | Phiên bản MIỄN PHÍ | Phiên bản soloflowOS PLUS |
-    | :--- | :---: | :---: |
-    | **Tốc độ xử lý & phản hồi của AI** | Tiêu chuẩn (1x) | 🔥 **Băng thông ưu tiên (Gấp 3x lần)** |
-    | **Giới hạn số lần rã việc** | Tối đa 5 lần / ngày | ♾️ **VÔ HẠN KHÔNG GIỚI HẠN** |
-    | **Độ sâu phân lớp sơ đồ cây** | Bị giới hạn ở 2 tầng | 🚀 **Phân rã sâu vô hạn (Deep layers)** |
-    | **Siêu mô hình trí tuệ nhân tạo** | Lõi Free-Model | 🧠 **Tích hợp trực tiếp GPT-4o & Claude 3.5** |
-    | **Cửa sổ ngữ cảnh xử lý (Context)** | 4.000 Tokens | 📊 **128.000 Tokens (Đọc tài liệu dày 300 trang)** |
-    | **Xuất sơ đồ Mindmap / Tiến độ** | Không hỗ trợ | ✅ **Hỗ trợ xuất 1-Click (XMind, Excel, PDF)** |
-    """)
-    
-    st.write("")
-    st.info("💡 **Hệ thống trợ lý AI trên bản PLUS** sử dụng thuật toán suy luận thông minh mới, tự động phát hiện các điểm nghẽn (Bottlenecks) trong kế hoạch dự án của bạn và tự đề xuất phương án giải quyết tối ưu nhất.")
-
-# ==========================================
-# 5. GIAO DIỆN MUA BẢN PLUS & CỔNG THANH TOÁN
-# ==========================================
-elif menu == "💳 Cổng Thanh Toán Plus":
-    st.title("💳 Trung Tâm Thanh Toán Hóa Đơn Dịch Vụ")
-    
-    col_invoice, col_gateway = st.columns([1, 1])
-    
-    with col_invoice:
-        st.subheader("🧾 Chi tiết hóa đơn điện tử")
-        st.write("---")
-        st.write("**Gói dịch vụ:** Nâng cấp Bản quyền soloflowOS v5.5 PLUS")
-        st.write("**Thời hạn:** Bản quyền vĩnh viễn theo tài khoản (Gia hạn chu kỳ 30 ngày)")
-        st.write("**Đơn giá niêm yết:** ~~199.000đ / tháng~~")
-        st.markdown("**Giá ưu đãi chiến dịch phần mềm:** :red[99.000đ / tháng] *(Tiết kiệm 50% / Đã áp mã giảm giá)*")
-        st.write("---")
-        st.caption("🔒 Giao dịch được mã hóa đầu cuối bằng chuẩn bảo mật SSL 256-bit, bảo vệ quyền lợi người dùng tuyệt đối.")
-        
-    with col_gateway:
-        st.subheader("🛡️ Lựa chọn cổng thanh toán an toàn")
-        pay_option = st.radio(
-            "Chọn cổng kết nối trực tiếp vào hệ thống xử lý ngân hàng:",
-            ["Cổng VietQR - Quét mã Chuyển khoản nhanh tự động", "Cổng Thẻ Quốc Tế - Visa / Mastercard / JCB"]
-        )
-        
-        st.write("---")
-        if pay_option == "Cổng VietQR - Quét mã Chuyển khoản nhanh tự động":
-            # Hiển thị mockup cổng mã QR
-            st.code(
-                "┌──────────────────────────────────┐\n"
-                "│                                  │\n"
-                "│       [ MÃ QR VIETQR MOCKUP ]    │\n"
-                "│      soloflowOS v5.5 Premium     │\n"
-                "│                                  │\n"
-                "└──────────────────────────────────┘", 
-                language="text"
-            )
-            st.caption("Hãy mở ứng dụng Ngân hàng di động (Banking App) bất kỳ của bạn để thực hiện quét mã QR tự động.")
-            
-            if st.button("🔄 Tôi Đã Chuyển Khoản - Kiểm Tra Ngay", type="primary", use_container_width=True):
-                with st.spinner("Hệ thống đang quét xác thực tín hiệu Webhook tài khoản ngân hàng..."):
-                    time.sleep(2.5)
-                st.session_state.tier = "PLUS Active"
-                st.success("🎉 Hệ thống xác nhận thành công! soloflowOS v5.5 của bạn đã được nâng cấp lên bản PLUS.")
+                        st.error("Sai tài khoản hoặc mật khẩu! (Thử: soloflow / 123456)")
+            with col_btn2:
+                st.button("Quên mật khẩu?", use_container_width=True)
                 
-        else:
-            # Giao diện nhập liệu thẻ tín dụng
-            st.text_input("Số thẻ tín dụng của bạn:", value="4321 0987 6543 2100")
-            c_sub1, c_sub2 = st.columns(2)
-            with c_sub1:
-                st.text_input("Hạn dùng thẻ (MM/YY):", value="12/29")
-            with c_sub2:
-                st.text_input("Mã bảo mật (CVC/CVV):", value="***", type="password")
+        with tab_register:
+            st.write("Tạo tài khoản soloflowOS mới để đồng bộ hóa dữ liệu đám mây.")
+            st.text_input("Họ và tên", placeholder="Nguyễn Văn A")
+            st.text_input("Địa chỉ Email", placeholder="example@gmail.com")
+            st.text_input("Tạo mật khẩu mới", type="password", placeholder="Tối thiểu 6 ký tự")
+            st.text_input("Xác nhận mật khẩu", type="password", placeholder="Trùng khớp mật khẩu trên")
+            st.checkbox("Tôi đồng ý với các Điều khoản dịch vụ và Chính sách bảo mật của soloflowOS.")
+            if st.button("Đăng Ký Ngay", use_container_width=True):
+                st.info("Tính năng đăng ký đang ghi nhận dữ liệu Sandbox!")
+
+# ==========================================
+# MÔ-ĐUN 2: THƯ VIỆN KẾT NỐI PAYOS (MOCK INTEGRATION)
+# ==========================================
+def generate_payos_link(amount: int, order_id: str):
+    """
+    Giả lập thuật toán mã hóa và tạo link thanh toán của PayOS API 
+    Sử dụng Checksum SHA256 dựa trên Client ID và API Key
+    """
+    payos_client_id = "soloflow_pos_cid_9921"
+    payos_api_key = "soloflow_pos_key_xyz8821"
+    
+    # Tạo chuỗi dữ liệu ký số theo chuẩn PayOS
+    raw_data = f"amount={amount}&cancelUrl=https://soloflow.streamlit.app&description=UpgradePlus&orderCode={order_id}&returnUrl=https://soloflow.streamlit.app"
+    signature = hmac.new(payos_api_key.encode(), raw_data.encode(), hashlib.sha256).hexdigest()
+    
+    payment_url = f"https://checkout.payos.vn/v2/payment-link-mockup?id={order_id}&sig={signature}&cid={payos_client_id}"
+    return payment_url, signature
+
+# ==========================================
+# MÔ-ĐUN 3: CÁC TÍNH NĂNG SIÊU ĐẶC BIỆT (SUPER FEATURES)
+# ==========================================
+def feature_ai_bottleneck_predictor(task_text):
+    """SIÊU TÍNH NĂNG 1: Dự đoán rủi ro và điểm nghẽn dự án"""
+    st.markdown("#### 🧠 Siêu Tính Năng: AI Bottleneck & Risk Predictor")
+    st.caption("Thuật toán Deep Learning giả lập phân tích dữ liệu lịch sử để tìm điểm nghẽn tiến độ.")
+    
+    with st.spinner("AI đang chạy mô hình Monte Carlo dự đoán rủi ro rò rỉ tiến độ..."):
+        time.sleep(1.5)
+        
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.error("🔴 Rủi ro kỹ thuật: 74%")
+        st.caption("Xung đột thư viện hoặc cấu hình sai Database ở Giai đoạn 1.")
+    with col2:
+        st.warning("🟡 Điểm nghẽn tài nguyên: 42%")
+        st.caption("Thời gian viết API Giỏ hàng dễ bị quá tải (vượt dự kiến 5 giờ).")
+    with col3:
+        st.success("🟢 Khả năng tối ưu SEO: Đạt 92%")
+        st.caption("Cấu hình sitemap tự động giảm tải công việc thủ công.")
+
+def feature_pomodoro_timer():
+    """SIÊU TÍNH NĂNG 2: Đồng hồ đếm ngược Pomodoro đồng bộ công việc"""
+    st.markdown("#### ⏱️ Đồng Hồ Tập Trung Pomodoro Integration")
+    
+    c1, c2, c3 = st.columns([2, 1, 1])
+    with c1:
+        st.info(f"Trạng thái vòng lặp: **{st.session_state.pomodoro_status}** (Tiêu chuẩn: 25 phút tập trung / 5 phút nghỉ)")
+    with c2:
+        if st.button("▶️ Bắt Đầu Tập Trung", use_container_width=True):
+            st.session_state.pomodoro_status = "Đang chạy (25:00)"
+            st.toast("Bắt đầu tính giờ Pomodoro! Tập trung cao độ nhé!")
+    with c3:
+        if st.button("⏹️ Dừng Tính Giờ", use_container_width=True):
+            st.session_state.pomodoro_status = "Đang dừng"
+            st.toast("Đã dừng đồng hồ.")
+
+def feature_kanban_simulator():
+    """SIÊU TÍNH NĂNG 3: Bảng Kanban tiến độ trực quan"""
+    st.markdown("#### 📋 Bảng Thống Kê Kanban Tiến Độ ( soloflow-Kanban )")
+    kb_todo, kb_doing, kb_done = st.columns(3)
+    
+    with kb_todo:
+        st.markdown("<div style='background-color:#fee2e2; padding:10px; border-radius:5px; color:#991b1b; font-weight:bold;'>📌 CẦN LÀM (To Do)</div>", unsafe_allow_html=True)
+        st.caption("▪️ Viết API xử lý Giỏ hàng và Thanh toán PayOS")
+        st.caption("▪️ Cấu hình bảo mật khóa mã hóa SSL")
+        
+    with kb_doing:
+        st.markdown("<div style='background-color:#fef3c7; padding:10px; border-radius:5px; color:#92400e; font-weight:bold;'>⚡ ĐANG LÀM (In Progress)</div>", unsafe_allow_html=True)
+        st.caption("▪️ Thiết kế cấu trúc sơ đồ ERD dữ liệu")
+        
+    with kb_done:
+        st.markdown("<div style='background-color:#dcfce7; padding:10px; border-radius:5px; color:#166534; font-weight:bold;'>✅ ĐÃ XONG (Done)</div>", unsafe_allow_html=True)
+        st.caption("▪️ Khởi tạo khung xương ứng dụng soloflowOS v6.0")
+
+# ==========================================
+# MÔ-ĐUN 4: CÁC VIEW GIAO DIỆN CHỨC NĂNG
+# ==========================================
+def render_dashboard():
+    # MENU SIDEBAR SAU KHI ĐĂNG NHẬP
+    st.sidebar.subheader(f"👋 Chào, {st.session_state.username}!")
+    sub_menu = st.sidebar.radio(
+        "Phân hệ ứng dụng:",
+        [
+            "📋 Rã Công Việc Nâng Cao",
+            "📊 Dashboard & Phân Tích",
+            "👤 Hồ Sơ Hệ Thống",
+            "⚙️ Cài Đặt Toàn Cục",
+            "💎 Nâng Cấp PLUS",
+            "💳 Cổng Thanh Toán PayOS"
+        ]
+    )
+    
+    st.sidebar.write("---")
+    if st.sidebar.button("🚪 Đăng Xuất", use_container_width=True):
+        st.session_state.logged_in = False
+        st.rerun()
+
+    # ------------------------------------------
+    # CHỨC NĂNG 1: RÃ CÔNG VIỆC NÂNG CAO
+    # ------------------------------------------
+    if sub_menu == "📋 Rã Công Việc Nâng Cao":
+        st.title("📋 Trung Tâm Rã Công Việc AI Cao Cấp")
+        
+        c_left, c_right = st.columns([1, 1.8])
+        with c_left:
+            st.subheader("⚙️ Thông Số Đầu Vào")
+            main_task = st.text_area("Mục tiêu lớn cần bẻ gãy:", value="Xây dựng website bán hàng chuẩn SEO bằng Django trong 1 tuần", height=80)
+            
+            ai_mode = st.selectbox("🎯 Mô hình phân rã:", ["Agile Sprints Optimizer", "Waterfall Step-by-Step", "Mindmap Node Generator"])
+            depth = st.slider("🔍 Độ sâu phân tầng lớp con:", 1, 5, 2)
+            
+            st.write("---")
+            btn_decompose = st.button("🪄 Kích Hoạt Lõi AI soloflow", type="primary", use_container_width=True)
+            
+            st.write("")
+            feature_pomodoro_timer()
+            
+        with c_right:
+            st.subheader("📊 Lộ Trình Phân Tách Chi Tiết")
+            if btn_decompose:
+                if depth > 2 and st.session_state.tier == "Free User":
+                    st.error("❌ Quyền truy cập bị giới hạn! Độ sâu phân rã từ cấp 3 trở lên chỉ dành cho bản PLUS.")
+                else:
+                    with st.spinner("Lõi AI đang bẻ gãy cấu trúc dữ liệu mục tiêu..."):
+                        time.sleep(1.5)
+                    st.success("Đã phân tách cấu trúc thành công!")
+                    
+                    with st.expander("📍 Bước 1: Khởi tạo kiến trúc nền tảng (Ngày 1-2)", expanded=True):
+                        st.checkbox("Thiết kế sơ đồ ERD hệ thống dữ liệu liên kết")
+                        st.checkbox("Cài đặt môi trường Python, Django Framework và Docker Container")
+                        if depth >= 3:
+                            st.caption("↳ *Mở rộng lớp con PLUS:* Tạo tệp cấu hình bảo mật khóa API mã hóa.")
+                            
+                    with st.expander("📍 Bước 2: Xây dựng logic & Tích hợp cổng PayOS (Ngày 3-5)", expanded=True):
+                        st.checkbox("Viết API quản lý danh mục giỏ hàng")
+                        st.checkbox("Tích hợp webhook đồng bộ hóa trạng thái hóa đơn PayOS")
+                        
+                    st.write("---")
+                    feature_ai_bottleneck_predictor(main_task)
+                    st.write("---")
+                    feature_kanban_simulator()
+            else:
+                st.info("Nhập thông tin bên trái và bấm nút kích hoạt để xem kết quả sơ đồ.")
+
+    # ------------------------------------------
+    # CHỨC NĂNG 2: DASHBOARD & PHÂN TÍCH ĐA DẠNG
+    # ------------------------------------------
+    elif sub_menu == "📊 Dashboard & Phân Tích":
+        st.title("📊 Trung Tâm Phân Tích Chỉ Số Dự Án")
+        
+        st.subheader("Biểu đồ phân bổ thời gian dự kiến cho các dự án")
+        chart_data = pd.DataFrame({
+            'Giai đoạn': ['Thiết kế hệ thống', 'Lập trình Backend', 'Tích hợp Frontend', 'Tối ưu SEO', 'Kiểm thử Security'],
+            'Số giờ dự kiến (Giả lập)': [12, 35, 20, 10, 15]
+        })
+        st.bar_chart(data=chart_data, x='Giai đoạn', y='Số giờ dự kiến (Giả lập)', color="#2563eb")
+        
+        st.subheader("📈 Tiến độ hoàn thành công việc tổng thể")
+        st.progress(0.65)
+        st.caption("Hiện tại bạn đã hoàn thành **65%** khối lượng công việc được rã nhỏ trong tuần này.")
+
+    # ------------------------------------------
+    # CHỨC NĂNG 3: HỒ SƠ HỆ THỐNG (PROFILE)
+    # ------------------------------------------
+    elif sub_menu == "👤 Hồ Sơ Hệ Thống":
+        st.title("👤 Hồ Sơ Người Dùng soloflowOS")
+        
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("Cấp độ tài khoản", st.session_state.tier)
+        col_m2.metric("Số token AI khả dụng trong ngày", f"{st.session_state.tokens_left} / 5" if st.session_state.tier == "Free User" else "Vô hạn (PLUS)")
+        col_m3.metric("Tốc độ phản hồi trung bình", "0.24 giây")
+        
+        st.write("---")
+        st.subheader("Cập nhật thông tin nhận diện sinh trắc học")
+        st.text_input("Tên định danh lập trình viên:", value="soloflow Developer")
+        st.text_input("Mã định danh hệ thống (UUID):", value="SFL-9921-X85-2026", disabled=True)
+        st.selectbox("Ngôn ngữ ưu tiên của AI:", ["Tiếng Việt", "English", "日本語"])
+        if st.button("Đồng Bộ Hóa Hồ Sơ", type="primary"):
+            st.toast("Đã lưu cấu hình hồ sơ cá nhân!")
+
+    # ------------------------------------------
+    # CHỨC NĂNG 4: CÀI ĐẶT TOÀN CỤC (SETTINGS)
+    # ------------------------------------------
+    elif sub_menu == "⚙️ Cài Đặt Toàn Cục":
+        st.title("⚙️ Cấu Hình Hệ Thống Lõi")
+        
+        tab_engine, tab_webhook = st.tabs(["🤖 Lõi Trí Tuệ Nhân Tạo", "🔌 Kết Nối Webhook Ngoài"])
+        with tab_engine:
+            st.selectbox("Lọc thuật toán LLM xử lý:", ["soloflow GPT-4o Supercharged", "Claude 3.5 Sonnet Heavy Reasoning"])
+            st.slider("Tham số nhiệt độ sáng tạo (Temperature):", 0.0, 1.0, 0.2)
+        with tab_webhook:
+            st.text_input("PayOS Webhook URL endpoint:", value="https://soloflow.streamlit.app/api/payos-webhook")
+            st.text_input("PayOS Checksum Key:", type="password", value="1234567890abcdefghijklmnopqrstuvwxyz")
+
+    # ------------------------------------------
+    # CHỨC NĂNG 5: GIAO DIỆN MUA BẢN PLUS ĐẸP MẮT
+    # ------------------------------------------
+    elif sub_menu == "💎 Nâng Cấp PLUS":
+        st.markdown("<h1 style='text-align: center; color: #e11d48;'>💎 Kích Hoạt Quyền Năng Hệ Điều Hành PLUS</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; font-size:18px;'>Giải phóng toàn bộ ranh giới công nghệ, tối ưu hóa 300% hiệu năng xử lý của trợ lý AI.</p>", unsafe_allow_html=True)
+        st.write("---")
+        
+        col_card1, col_card2 = st.columns(2)
+        
+        with col_card1:
+            st.markdown("""
+            <div style='border: 2px solid #e2e8f0; padding: 25px; border-radius: 15px; background-color: #f8fafc;'>
+                <h3 style='color: #64748b;'>Gói Tiêu Chuẩn (Free)</h3>
+                <h2>0 đ <span style='font-size:14px; color:gray;'>/ vĩnh viễn</span></h2>
+                <hr>
+                <p>❌ Giới hạn 5 lượt rã việc mỗi ngày</p>
+                <p>❌ Độ sâu sơ đồ cây bị khóa ở cấp 2</p>
+                <p>❌ Không mở khóa mô hình phân tích rủi ro chuyên sâu</p>
+                <p>❌ Không hỗ trợ xuất file sơ đồ tư duy Mindmap</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.write("")
+            st.button("Bạn đang sử dụng gói này", disabled=True, use_container_width=True)
+            
+        with col_card2:
+            st.markdown("""
+            <div style='border: 3px solid #e11d48; padding: 25px; border-radius: 15px; background-color: #fff1f2; box-shadow: 0px 4px 15px rgba(225, 29, 72, 0.2);'>
+                <h3 style='color: #e11d48;'>⚡ Gói soloflowOS PLUS 💎</h3>
+                <h2>99.000 đ <span style='font-size:14px; color:gray;'>/ tháng (Giá gốc: 199.000 đ)</span></h2>
+                <hr>
+                <p>🟢 <b>VÔ HẠN</b> số lần phân rã công việc bằng AI</p>
+                <p>🟢 Mở khóa độ sâu phân rã tối đa (Cấp 5 - Deep Layers)</p>
+                <p>🟢 Kích hoạt Siêu tính năng <b>AI Bottleneck Predictor</b> tìm điểm nghẽn</p>
+                <p>🟢 Xuất dữ liệu 1-Click sang định dạng Excel, PDF và Sơ đồ XMind</p>
+                <p>🟢 Ưu tiên băng thông kết nối lõi GPT-4o & Claude 3.5 độc quyền</p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.write("")
+            if st.button("🔥 NÂNG CẤP LÊN BẢN PLUS NGAY", type="primary", use_container_width=True):
+                st.balloons()
+                st.toast("Đang chuyển hướng bạn sang cổng thanh toán trực tiếp PayOS...")
+                time.sleep(1)
+                st.info("Hãy chuyển sang tab 'Cổng Thanh Toán PayOS' ở menu bên trái để quét mã hóa đơn!")
+
+    # ------------------------------------------
+    # CHỨC NĂNG 6: TÍCH HỢP CỔNG THANH TOÁN PAYOS
+    # ------------------------------------------
+    elif sub_menu == "💳 Cổng Thanh Toán PayOS":
+        st.title("💳 Trung Tâm Xác Thực Hóa Đơn Qua Cổng PayOS")
+        st.write("Hệ thống liên kết trực tiếp API bảo mật của cổng trung gian thanh toán PayOS.")
+        
+        col_inv, col_qr = st.columns([1, 1.2])
+        
+        with col_inv:
+            st.subheader("🧾 Chi Tiết Hóa Đơn Thanh Toán")
+            st.markdown("""
+            * **Đơn vị cung cấp giải pháp:** soloflowOS Technology Global
+            * **Sản phẩm bản quyền:** Giấy phép kích hoạt `soloflowOS v6.0 PLUS`
+            * **Thời hạn sử dụng:** 30 Ngày (Hệ thống tự động gia hạn)
+            * **Mã giao dịch ứng dụng:** `SFL-ORDER-2026-9921A`
+            """)
+            st.write("---")
+            st.markdown("### 💰 Số tiền cần thanh toán: <span style='color:red;'>99.000 VNĐ</span>", unsafe_allow_html=True)
+            
+            # Khởi tạo tạo link PayOS thật dựa trên cấu trúc
+            if st.button("🔗 Khởi Tạo Link Thanh Toán Tự Động Qua PayOS", type="primary", use_container_width=True):
+                random_code = str(random.randint(100000, 999999))
+                url, sig = generate_payos_link(99000, random_code)
+                st.session_state.payos_order_id = random_code
+                st.success(f"Đã đăng ký hóa đơn thành công lên máy chủ PayOS! Mã đơn: #{random_code}")
                 
-            if st.button("💳 Xác Nhận Thanh Toán Ký Số Qua Thẻ", type="primary", use_container_width=True):
-                with st.spinner("Đang kết nối trung tâm thanh toán thẻ quốc tế bảo mật..."):
-                    time.sleep(2.5)
-                st.session_state.tier = "PLUS Active"
-                st.success("🎉 Giao dịch thành công! Xin chào đón bạn đến với thế giới sức mạnh của soloflowOS PLUS.")
+        with col_qr:
+            st.subheader("📲 Quét Mã QR Qua Ứng Dụng Ngân Hàng (VietQR)")
+            if st.session_state.payos_order_id is not None:
+                # Thiết kế Mockup giao diện mã QR chuyển khoản chuẩn PayOS chuyên nghiệp
+                st.markdown(f"""
+                <div style='border: 2px dashed #2563eb; padding: 20px; border-radius: 10px; text-align: center; background-color: #f0f7ff;'>
+                    <p style='font-weight: bold; color: #2563eb;'>CỔNG THANH TOÁN ĐỐI TÁC CHÍNH THỨC - PAYOS</p>
+                    <div style='background-color: white; width: 200px; height: 200px; margin: 0 auto; border: 1px solid #cbd5e1; padding: 10px;'>
+                        <p style='font-size: 11px; margin-top: 40px; color: #64748b;'>[ MÃ QR VIETQR ]<br>Đã mã hóa bảo mật<br><b>Mã đơn: #{st.session_state.payos_order_id}</b></p>
+                    </div>
+                    <p style='font-size: 13px; margin-top: 10px; color: #475569;'>Nội dung CK tự động: <b>SOLOFLOW {st.session_state.payos_order_id}</b></p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.write("")
+                if st.button("🔄 Tôi Đã Chuyển Khoản - Kiểm Tra Trạng Thái PayOS Webhook", use_container_width=True):
+                    with st.spinner("Đang truy vấn API PayOS xem tiền đã vào tài khoản chưa..."):
+                        time.sleep(2)
+                    st.session_state.tier = "PLUS Active"
+                    st.success("🎉 Hệ thống PayOS phản hồi: Đã nhận đủ 99.000 đ! Tài khoản của bạn đã nâng cấp thành PLUS thành công.")
+                    st.balloons()
+            else:
+                st.warning("Vui lòng bấm nút khởi tạo hóa đơn ở cột bên trái để hiển thị mã QR thanh toán PayOS.")
+
+# ==========================================
+# KHỞI CHẠY ĐIỀU HƯỚNG TOÀN HỆ THỐNG
+# ==========================================
+def main():
+    if not st.session_state.logged_in:
+        render_login_page()
+    else:
+        render_dashboard()
+
+if __name__ == "__main__":
+    main()
