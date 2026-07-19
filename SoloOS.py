@@ -611,5 +611,5 @@ with tab_system:
                         save_tasks(uploaded_tasks)
                         st.success("Khôi phục thành công!")
                         st.rerun()
-                else:
+               except Exception as e:
                    st.error("File backup không đúng cấu trúc dữ liệu")
