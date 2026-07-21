@@ -4,6 +4,4 @@ pandas
 requests
 payos
 python-dotenv
-streamlit>=1.30.0
-pandas>=2.0.0
-pillow>=10.0.0
+plotly
