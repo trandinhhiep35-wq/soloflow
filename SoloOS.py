@@ -377,6 +377,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import json
+import re
 import os
 from supabase import create_client, Client
 import google.generativeai as genai
@@ -415,7 +416,7 @@ is_vip = st.session_state['user_plan'] != 'Basic'
 # Giao diện CSS chuẩn Obsidian / Cosmic Cyberpunk
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap)');
     
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
@@ -486,6 +487,59 @@ st.markdown("""
     }
 
     .feature-list li::before {
+        content: "• ";
+        color: #3b82f6;
+        font-weight: bold;
+    }
+
+    /* Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        background-color: rgba(17, 24, 39, 0.6);
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 42px;
+        border-radius: 8px;
+        color: #9ca3af;
+        font-weight: 600;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: #1e293b !important;
+        color: #3b82f6 !important;
+        border-bottom: 2px solid #3b82f6 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. KHỞI TẠO CSDL & AI GEMINI KEY AQ
+# ==========================================
+@st.cache_resource
+def init_supabase():
+    url = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
+    key = st.secrets.get("SUPABASE_KEY", os.getenv("SUPABASE_KEY", ""))
+    if url and key:
+        try:
+            return create_client(url, key)
+        except Exception:
+            return None
+    return None
+
+supabase: Client = init_supabase()
+
+def clean_json_str(text_data: str) -> str:
+    """Hàm bóc tách JSON an toàn 100%, không dùng chuỗi chứa backtick trực tiếp tránh lỗi Markdown"""
+    # \x60 là ký tự backtick (`), dùng regex thay thế tuyệt đối không gây lỗi SyntaxError
+    clean = re.sub(r'\x60{3}(?:json)?', '', text_data)
+    return clean.strip()
+
+def call_gemini_wbs(prompt_text, category, is_vip_mode=False):
+    api_key = st.session_state
         content: "• ";
         color: #3b82f6;
         font-weight: bold;
