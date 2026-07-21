@@ -1,257 +1,343 @@
 import streamlit as st
-import pandas as pd
-import json
 import time
-import datetime
-import os
+import json
 
 # ==========================================
-# 0. FIX LỖI DÒNG 7: IMPORT AN TOÀN (TRY-EXCEPT)
-# ==========================================
-try:
-    from supabase import create_client, Client
-    SUPABASE_READY = True
-except ImportError:
-    SUPABASE_READY = False
-    Client = None
-
-# ==========================================
-# 1. CẤU HÌNH TRANG & GIAO DIỆN GLASSMORPHISM
+# 1. CẤU HÌNH TRANG & THEME
 # ==========================================
 st.set_page_config(
-    page_title="SoloFlow OS Enterprise v6.0",
-    page_icon="⚡",
+    page_title="SoloFlow OS",
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Custom CSS giao diện Deep Obsidian & VIP Cards giống ảnh 100%
 st.markdown("""
 <style>
-    .stApp { background: #090A0F; color: #E2E8F0; }
-    .badge-plus {
-        background: linear-gradient(135deg, #FFD700 0%, #FF8C00 100%);
-        color: #000; font-weight: 800; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem;
+    /* Nền tổng thể */
+    .stApp {
+        background-color: #0d1117;
+        color: #c9d1d9;
     }
-    .badge-p0 { background: #EF4444; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
-    .badge-p1 { background: #F59E0B; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
-    .badge-p2 { background: #10B981; color: white; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: bold; }
-    .wbs-card {
-        background: rgba(15, 23, 42, 0.7);
-        border-left: 4px solid #3B82F6;
-        border-radius: 8px; padding: 15px; margin-bottom: 12px;
+    
+    /* Custom Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #161b22;
+        border-right: 1px solid #30363d;
+    }
+    
+    /* User Profile Card ở Sidebar */
+    .user-profile-card {
+        background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+        border: 1px solid #374151;
+        border-radius: 12px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .user-badge {
+        background: #2563eb;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+    
+    /* VIP Pricing Cards Styling */
+    .vip-card {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 16px;
+        padding: 24px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    .vip-card:hover {
+        border-color: #58a6ff;
+        transform: translateY(-2px);
+    }
+    .vip-card-featured {
+        background: linear-gradient(180deg, #1c2333 0%, #0d1117 100%);
+        border: 2px solid #3b82f6;
+        box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+    }
+    .vip-price {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #ffffff;
+        margin: 15px 0;
+    }
+    .vip-feature-list {
+        list-style: none;
+        padding: 0;
+        margin: 15px 0;
+    }
+    .vip-feature-list li {
+        margin-bottom: 10px;
+        color: #8b949e;
+        font-size: 0.9rem;
+    }
+    .vip-feature-list li::before {
+        content: "• ";
+        color: #3b82f6;
+        font-weight: bold;
+    }
+    
+    /* Tiêu đề SoloFlow Plus VIP */
+    .vip-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    .vip-title {
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: #ffffff;
+    }
+    .vip-subtitle {
+        color: #8b949e;
+        font-size: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. KHỞI TẠO SUPABASE DATABASE AN TOÀN
-# ==========================================
-SUPABASE_URL = st.secrets.get("SUPABASE_URL", "https://zpsqlnprryplhjogpvfy.supabase.co")
-SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
-
-@st.cache_resource
-def init_supabase(url: str, key: str):
-    if not SUPABASE_READY or not key:
-        return None
-    try:
-        return create_client(url, key)
-    except Exception:
-        return None
-
-supabase_client = init_supabase(SUPABASE_URL, SUPABASE_KEY)
-
-def db_fetch_wbs():
-    if not supabase_client:
-        return []
-    try:
-        res = supabase_client.table("wbs_tasks").select("*").order("created_at", desc=True).execute()
-        return res.data
-    except Exception:
-        return []
-
-def db_insert_wbs(task_data):
-    if supabase_client:
-        try:
-            supabase_client.table("wbs_tasks").insert(task_data).execute()
-        except Exception as e:
-            st.error(f"Lỗi lưu Supabase: {e}")
+# Khởi tạo Session State cho trạng thái tài khoản
+if 'user_plan' not in st.session_state:
+    st.session_state['user_plan'] = 'Basic'  # Basic, Premium, Lifetime
 
 # ==========================================
-# 3. SIDEBAR (PROFILE, KEYS & DB STATUS)
+# 2. SIDEBAR - USER PROFILE & AI ENGINE
 # ==========================================
 with st.sidebar:
-    st.markdown("## ⚡ SoloFlow OS <span class='badge-plus'>PLUS ENTERPRISE</span>", unsafe_allow_html=True)
-    st.caption("International Standard Productivity Framework")
+    st.title("🚀 SoloFlow OS")
     
-    st.markdown("---")
-    st.markdown("### 👤 Account Profile")
-    st.write("**User:** `hiepcuto20`")
-    st.write("**Role:** CTO / Admin")
-    st.info("🔒 Passkey / Sinh trắc học: ACTIVE")
+    # User Profile Box
+    plan_display = f"<span class='user-badge'>{st.session_state['user_plan']}</span>" if st.session_state['user_plan'] != 'Basic' else "<span class='user-badge' style='background:#4b5563;'>Basic</span>"
+    st.markdown(f"""
+    <div class="user-profile-card">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-size: 2rem;">👤</div>
+            <div>
+                <strong style="color: white; font-size: 1.1rem;">Nepcutu20</strong> {plan_display}<br>
+                <span style="color: #6e7681; font-size: 0.85rem;">@nepcutu20</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.markdown("### 🔑 Supabase & API Configuration")
-    input_url = st.text_input("Supabase URL:", value=SUPABASE_URL)
-    input_key = st.text_input("Supabase Key (AQ / sb_...):", value=SUPABASE_KEY, type="password")
-    gemini_key = st.text_input("Gemini API Key:", value="AQ" + "*"*28, type="password")
+    st.subheader("🏋️ Trình độ rèn luyện")
+    st.caption("Cấp độ hiện tại: Level 2 (Flow Explorer)")
+    st.progress(180 / 400)
+    st.caption("Tiến trình cấp độ: 180 / 400 XP")
     
-    st.markdown("---")
-    if supabase_client:
-        st.success("🟢 Supabase DB: Connected")
-    elif not SUPABASE_READY:
-        st.warning("🟡 Đang chờ cài thư viện Supabase trên Server...")
-    else:
-        st.error("🔴 Supabase DB: Nhập Key để kết nối")
+    st.divider()
+    
+    st.subheader("🤖 Cấu hình AI Engine")
+    ai_model = st.selectbox("Mô hình AI active", ["SoloMind-v2 Fast", "SoloMind Pro (Bản Plus)", "GPT-4o Integration"])
+    temp = st.slider("Độ sáng tạo AI", 0.0, 1.0, 0.7)
 
 # ==========================================
-# 4. GIAO DIỆN CHÍNH & 10 TIÊU CHÍ
+# 3. THANH ĐIỀU HƯỚNG TABS
 # ==========================================
-st.title("🌐 SoloFlow OS - Enterprise Control Center")
-
-with st.expander("👋 10. Hướng dẫn sử dụng nhanh (Onboarding)", expanded=False):
-    st.markdown("""
-    * **Bước 1:** Dữ liệu Rã công việc (WBS) đồng bộ 2 chiều với Supabase.
-    * **Bước 2:** Sử dụng **AI Task Decomposer** (Bản Plus) để tự động phân rã nhiệm vụ.
-    * **Bước 3:** Quản lý Background Queue và Log lỗi hệ thống ở các Tab tương ứng.
-    """)
-
-main_tabs = st.tabs([
-    "📊 3. Dashboard & Reports",
-    "📋 2. Rã công việc (WBS - Supabase)",
-    "💳 2. Thanh toán & Kích hoạt",
-    "⚡ 5. Background Queue & Logs",
-    "⚙️ 8, 9. Security, API & Webhooks"
+tab_dashboard, tab_tasks, tab_ai, tab_settings, tab_plus, tab_backup = st.tabs([
+    "📊 Dashboard", 
+    "📋 Nhiệm vụ", 
+    "🧠 SoloMind AI", 
+    "⚙️ Hồ Sơ & Cài Đặt", 
+    "💎 SoloFlow PLUS VIP", 
+    "💾 Sao Lưu & Lưu Trữ"
 ])
 
-# ------------------------------------------
+# ==========================================
 # TAB 1: DASHBOARD
-# ------------------------------------------
-with main_tabs[0]:
-    st.subheader("📊 Executive Dashboard")
-    wbs_data = db_fetch_wbs()
+# ==========================================
+with tab_dashboard:
+    st.header("Tổng quan năng suất")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Nhiệm vụ hoàn thành", "12/15", "+2 hôm nay")
+    col2.metric("Thời gian Flow State", "4.5 giờ", "85% mục tiêu")
+    col3.metric("Gói hiện tại", st.session_state['user_plan'])
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng WBS Tasks", len(wbs_data))
-    c2.metric("Hiệu suất xử lý", "98.5%", "+2.1%")
-    c3.metric("Độ trễ Database", "18ms", "-2ms")
-    c4.metric("Bản Plus", "ACTIVE", "Enterprise")
+    st.info("💡 Mẹo: Sử dụng tab 'Nhiệm vụ' để rã các công việc phức tạp thành checklist chi tiết.")
 
-    st.markdown("---")
-    col_chart1, col_chart2 = st.columns([2, 1])
-    with col_chart1:
-        st.markdown("##### 📈 Tiến độ hoàn thành (Burn-down Chart)")
-        chart_df = pd.DataFrame({
-            "Ngày": ["T2", "T3", "T4", "T5", "T6", "T7", "CN"],
-            "Đã xong": [10, 18, 25, 30, 42, 50, 65],
-            "Còn lại": [60, 52, 45, 40, 28, 20, 5]
-        })
-        st.line_chart(chart_df.set_index("Ngày"))
-        
-    with col_chart2:
-        st.markdown("##### 🎯 Phân bổ Ưu tiên")
-        st.bar_chart(pd.DataFrame({"Mức": ["P0", "P1", "P2"], "Số lượng": [4, 12, 18]}).set_index("Mức"))
-
-# ------------------------------------------
-# TAB 2: RÃ CÔNG VIỆC CHUẨN WBS
-# ------------------------------------------
-with main_tabs[1]:
-    st.subheader("📋 Rã công việc Tiêu chuẩn Quốc tế (WBS Framework)")
+# ==========================================
+# TAB 2: TÍNH NĂNG RÃ CÔNG VIỆC (TASK DECOMPOSITION)
+# ==========================================
+with tab_tasks:
+    st.header("📋 Công cụ Rã Công Việc AI")
+    st.write("Nhập mục tiêu hoặc dự án lớn của bạn, AI sẽ tự động phân tách thành các bước nhỏ dễ thực hiện.")
     
-    with st.expander("🤖 [SOLOFLOW PLUS] AI Smart Task Decomposer", expanded=True):
-        ai_goal = st.text_input("Nhập mục tiêu lớn cần rã:")
-        if st.button("🚀 AI Rã công việc & Lưu vào Supabase"):
-            if ai_goal:
-                with st.spinner("AI đang phân rã và đồng bộ Supabase..."):
-                    task_id = f"WBS-{int(time.time()) % 10000}"
-                    new_item = {
-                        "task_id": task_id,
-                        "epic": f"🎯 {ai_goal}",
-                        "title": f"Thiết kế Kiến trúc cho {ai_goal}",
-                        "priority": "P0",
-                        "owner": "hiepcuto20",
-                        "est_hours": 12,
-                        "subtasks": json.dumps([
-                            "1. Phân tích Database Schema",
-                            "2. Thiết lập Webhook Gateway & API",
-                            "3. Kiểm thử bảo mật SQLi/XSS Shield"
-                        ])
-                    }
-                    db_insert_wbs(new_item)
-                    st.success(f"Đã rã task thành công! (Mã: {task_id})")
-                    st.rerun()
-
-    st.markdown("### 📂 Danh sách WBS Tasks")
-    tasks_list = db_fetch_wbs()
+    main_task = st.text_input("Nhập tên công việc lớn cần rã:", placeholder="Ví dụ: Lập kế hoạch ra mắt phần mềm SaaS trong 30 ngày")
+    detail_level = st.select_slider("Mức độ chi tiết:", options=["Cơ bản (3-5 bước)", "Chi tiết (5-8 bước)", "Sâu sắc (8-12 bước)"])
     
-    if not tasks_list:
-        st.info("💡 Chưa có dữ liệu WBS. Dùng bộ AI Decomposer ở trên để rã công việc mới nhé!")
-    else:
-        for t in tasks_list:
-            st.markdown(f"""
-            <div class='wbs-card'>
-                <div style='display: flex; justify-content: space-between;'>
-                    <h4>[{t.get('task_id', 'WBS')}] {t.get('title', 'N/A')}</h4>
-                    <span class='badge-{t.get('priority', 'P1').lower()}'>{t.get('priority', 'P1')}</span>
-                </div>
-                <p style='color: #94A3B8; margin: 0;'>Epic: {t.get('epic', '')} | Phụ trách: {t.get('owner', 'Admin')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            sub_raw = t.get('subtasks', '[]')
-            sub_arr = json.loads(sub_raw) if isinstance(sub_raw, str) else sub_raw
-            for s in sub_arr:
-                st.checkbox(str(s), value=False, key=f"{t.get('task_id')}_{s}")
+    if st.button("🚀 AI Rã Công Việc", type="primary"):
+        if not main_task:
+            st.warning("Vui lòng nhập nội dung công việc!")
+        else:
+            with st.spinner("SoloMind AI đang phân tích và rã nhỏ công việc..."):
+                time.sleep(1.5) # Giả lập gian xử lý AI
+                
+                st.success("Đã rã công việc thành công!")
+                
+                # Kết quả mẫu được phân rã
+                subtasks = [
+                    {"step": "Bước 1", "title": "Nghiên cứu thị trường & đối thủ", "time": "2 giờ", "priority": "Cao"},
+                    {"step": "Bước 2", "title": "Xác định tính năng cốt lõi (MVP)", "time": "1.5 giờ", "priority": "Cao"},
+                    {"step": "Bước 3", "title": "Thiết kế UI/UX Wireframe", "time": "4 giờ", "priority": "Trung bình"},
+                    {"step": "Bước 4", "title": "Lập trình Backend & Database", "time": "8 giờ", "priority": "Cao"},
+                    {"step": "Bước 5", "title": "Tích hợp cổng thanh toán VietQR", "time": "3 giờ", "priority": "Trung bình"},
+                    {"step": "Bước 6", "title": "Kiểm thử (Testing) & Sửa lỗi", "time": "3 giờ", "priority": "Thấp"},
+                ]
+                
+                st.subheader(f"📌 Kế hoạch chi tiết cho: {main_task}")
+                for task in subtasks:
+                    with st.expander(f"{task['step']}: {task['title']}"):
+                        st.write(f"- **Thời gian ước tính:** {task['time']}")
+                        st.write(f"- **Độ ưu tiên:** {task['priority']}")
+                        st.checkbox("Đánh dấu đã hoàn thành", key=task['step'])
 
-# ------------------------------------------
-# TAB 3: THANH TOÁN & KÍCH HOẠT
-# ------------------------------------------
-with main_tabs[2]:
-    st.subheader("💳 2. Tự động hóa Thanh toán & Kích hoạt SoloFlow Plus")
-    col_p1, col_p2 = st.columns(2)
-    with col_p1:
-        st.markdown("### 🌟 Gói SoloFlow Plus Enterprise")
+# ==========================================
+# TAB 3: SOLOMIND AI
+# ==========================================
+with tab_ai:
+    st.header("🧠 Trợ lý SoloMind AI")
+    if st.session_state['user_plan'] == 'Basic':
+        st.warning("⚡ Bạn đang dùng bản Basic. Nâng cấp lên bản PLUS để không giới hạn token AI.")
+    
+    chat_input = st.text_input("Hỏi SoloMind AI bất kỳ điều gì về tiến độ làm việc...")
+    if chat_input:
+        st.write(f"🤖 **SoloMind AI:** Tôi đã ghi nhận yêu cầu: *'{chat_input}'*. Hãy tập trung hoàn thành các bước trong tab Nhiệm vụ!")
+
+# ==========================================
+# TAB 4: HỒ SƠ & CÀI ĐẶT
+# ==========================================
+with tab_settings:
+    st.header("⚙️ Cài đặt hệ thống")
+    st.text_input("Tên hiển thị", value="Nepcutu20")
+    st.text_input("Email nhận thông báo", value="nepcutu20@soloflow.io")
+    st.toggle("Bật thông báo nhịp sinh học Circadian", value=True)
+
+# ==========================================
+# TAB 5: SOLOFLOW PLUS VIP (GIAO DIỆN GIỐNG HÌNH ÁNH 100%)
+# ==========================================
+with tab_plus:
+    st.markdown("""
+    <div class="vip-header">
+        <div class="vip-title">💎 SoloFlow PLUS - Sức Mạnh Vô Song</div>
+        <div class="vip-subtitle">Xóa bỏ mọi giới hạn hoạt động. Nâng tầm tư duy năng suất cùng công nghệ AI đặc quyền đỉnh cao.</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c1, c2, c3 = st.columns(3)
+    
+    # CARD 1: Basic Plan
+    with c1:
         st.markdown("""
-        * ✅ Đồng bộ Supabase Real-time DB
-        * ✅ AI Auto Task Decomposer (Rã công việc WBS)
-        * ✅ Passkey / Biometric Security
-        * ✅ Auto Webhook Triggers
-        """)
-        st.markdown("#### Giá: **299,000 VNĐ / Tháng**")
-    with col_p2:
-        st.markdown("### 📲 Quét VietQR Kích hoạt")
-        st.image("https://api.vietqr.io/image/970422-19036888888888-Compact.png?amount=299000&addInfo=SOLOFLOW%20PLUS%20HIEPCUTO20", width=240)
-        code_input = st.text_input("Nhập Key Kích hoạt (AQ...):", value="AQ-PLUS-ENTERPRISE-2026")
-        if st.button("⚡ Xác nhận Key"):
-            st.balloons()
-            st.success("🎉 Key kích hoạt hợp lệ!")
+        <div class="vip-card">
+            <div>
+                <h3>⏳ Basic Plan</h3>
+                <div class="vip-price">Miễn phí</div>
+                <ul class="vip-feature-list">
+                    <li>Rã công việc tối thiểu</li>
+                    <li>Hạ tầng FlowViewer cơ bản</li>
+                    <li>Trình tư vấn AI bị giới hạn</li>
+                    <li>Giao diện Deep Obsidian mặc định</li>
+                </ul>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.button("Đã kích hoạt mặc định", disabled=True, key="btn_basic", use_container_width=True)
 
-# ------------------------------------------
-# TAB 4: QUEUE & LOGS
-# ------------------------------------------
-with main_tabs[3]:
-    st.subheader("⚡ 5. Xử lý tác vụ ngầm & Hàng chờ (Background Queue)")
-    st.table(pd.DataFrame([
-        {"Job ID": "JOB-901", "Tác vụ": "Supabase Realtime Sync", "Trạng thái": "Active"},
-        {"Job ID": "JOB-902", "Tác vụ": "AI WBS Auto Breakdown", "Trạng thái": "Completed"}
-    ]))
-    st.markdown("---")
-    st.subheader("🪵 7. Bắt lỗi tự động & Ghi log")
-    st.text_area("Live Terminal Logs:", value="[INFO] System initialized safely.\n[SUCCESS] Safe Import bypassed ModuleNotFoundError.", height=150)
+    # CARD 2: Monthly Premium (Nổi bật)
+    with c2:
+        st.markdown("""
+        <div class="vip-card vip-card-featured">
+            <div>
+                <span style="background: #f59e0b; color: black; font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">POPULAR</span>
+                <h3 style="margin-top: 5px;">🌟 Monthly Premium</h3>
+                <div class="vip-price">79.000đ<span style="font-size:1rem; font-weight:normal;">/tháng</span></div>
+                <ul class="vip-feature-list">
+                    <li>Rã công việc siêu tốc không giới hạn</li>
+                    <li>Mở khóa toàn bộ Cosmic Theme</li>
+                    <li>Điều độ nhịp sinh học Circadian</li>
+                    <li>Trình hạ âm Âm thanh 3D Binaural</li>
+                    <li>Bản đồ tư duy AI Mind Map Pro</li>
+                </ul>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("⚡ Đăng ký ngay (79k)", type="primary", key="btn_monthly", use_container_width=True):
+            st.session_state['pay_type'] = "Monthly Premium"
+            st.session_state['pay_amount'] = 79000
 
-# ------------------------------------------
-# TAB 5: BẢO MẬT & API
-# ------------------------------------------
-with main_tabs[4]:
-    st.subheader("⚙️ Bảo mật, API Key & Webhooks")
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        st.markdown("### 🔐 Passkey & Sinh trắc học")
-        st.checkbox("Bật FaceID / TouchID", value=True)
-        st.markdown("### 🛡️ WAF Security")
-        st.toggle("Anti-SQL Injection Engine", value=True)
-    with col_s2:
-        st.markdown("### 🔗 Webhooks")
-        st.text_input("Webhook Endpoint:", value="https://api.soloflow.io/v1/sync")
+    # CARD 3: Cosmic VIP Lifetime
+    with c3:
+        st.markdown("""
+        <div class="vip-card">
+            <div>
+                <h3>🌌 Cosmic VIP Lifetime</h3>
+                <div class="vip-price">399.000đ<span style="font-size:1rem; font-weight:normal;">/vĩnh viễn</span></div>
+                <ul class="vip-feature-list">
+                    <li>Sở hữu vĩnh viễn toàn bộ tính năng</li>
+                    <li>Miễn phí cập nhật tất cả phiên bản tiếp theo</li>
+                    <li>Nhận biểu tượng huy hiệu VIP đặc biệt</li>
+                    <li>Ưu tiên xử lý hệ thống AI tốc độ cao</li>
+                    <li>Hỗ trợ kỹ thuật 24/7 từ đội ngũ phát triển</li>
+                </ul>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("💎 Mua gói Lifetime (399k)", key="btn_lifetime", use_container_width=True):
+            st.session_state['pay_type'] = "Cosmic VIP Lifetime"
+            st.session_state['pay_amount'] = 399000
 
-st.markdown("---")
-st.caption("© 2026 SoloFlow OS Enterprise.")
+    # HỘP THOẠI THANH TOÁN VIETQR KHI KHÁCH HÀNG BẤM MUA
+    if 'pay_type' in st.session_state:
+        st.divider()
+        st.subheader(f"💳 Cổng thanh toán VietQR - {st.session_state['pay_type']}")
+        
+        col_qr, col_info = st.columns([1, 2])
+        
+        # Cấu hình tài khoản nhận tiền của bạn tại đây
+        bank_id = "MB" # Ngân hàng MBBank (hoặc ICB, VCB, ACB...)
+        account_no = "0333333333" # Điền STK ngân hàng của bạn vào đây
+        account_name = "SOLOFLOW OS VIP"
+        amount = st.session_state['pay_amount']
+        add_info = f"SOLOFLOW {st.session_state['pay_type'].replace(' ', '')}"
+        
+        # Tạo URL VietQR chuẩn hóa
+        vietqr_url = f"https://img.vietqr.io/image/{bank_id}-{account_no}-compact2.png?amount={amount}&addInfo={add_info}&accountName={account_name}"
+        
+        with col_qr:
+            st.image(vietqr_url, caption="Quét mã QR qua app ngân hàng để kích hoạt tự động", width=250)
+            
+        with col_info:
+            st.write(f"- **Số tiền:** `{amount:,} VNĐ`")
+            st.write(f"- **Nội dung chuyển khoản:** `{add_info}`")
+            st.write(f"- **Ngân hàng:** `{bank_id}` - STK: `{account_no}`")
+            st.write(f"- **Chủ tài khoản:** `{account_name}`")
+            
+            if st.button("✅ Tôi đã chuyển khoản thành công"):
+                st.session_state['user_plan'] = st.session_state['pay_type']
+                del st.session_state['pay_type']
+                st.success("Xác nhận thanh toán thành công! Tài khoản của bạn đã được nâng cấp lên bản PLUS VIP.")
+                time.sleep(1)
+                st.rerun()
+
+# ==========================================
+# TAB 6: SAO LƯU & LƯU TRỮ
+# ==========================================
+with tab_backup:
+    st.header("💾 Sao lưu & Lưu trữ dữ liệu")
+    st.write("Xuất toàn bộ cấu hình công việc và lịch sử rã task ra file JSON.")
+    
+    sample_data = {"user": "Nepcutu20", "level": 2, "xp": 180, "plan": st.session_state['user_plan']}
+    st.download_button(
+        label="📥 Tải về dữ liệu (.json)",
+        data=json.dumps(sample_data, indent=4),
+        file_name="soloflow_backup.json",
+        mime="application/json"
+    )
