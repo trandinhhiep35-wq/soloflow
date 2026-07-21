@@ -372,3 +372,194 @@ if 'last_result' in st.session_state:
             """, unsafe_allow_html=True)
 
         st.info("💡 Mẹo: Bật công tắc 'Trải nghiệm Giao diện & AI PLUS VIP' ở menu bên trái để mở khóa Sơ đồ Mindmap Visual WBS và Gemini suy luận sâu!")
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import json
+import os
+from supabase import create_client, Client
+import google.generativeai as genai
+
+# ==========================================
+# 1. CẤU HÌNH TRANG & CSS THEME OBSIDIAN / COSMIC
+# ==========================================
+st.set_page_config(
+    page_title="SoloFlow OS - AI Productivity Engine",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Đọc Key AQ từ Secrets hoặc biến môi trường
+aq_key_secret = (
+    st.secrets.get("AQ") or 
+    st.secrets.get("AQ_KEY") or 
+    st.secrets.get("GEMINI_API_KEY", os.getenv("AQ", ""))
+)
+
+if 'gemini_key' not in st.session_state:
+    st.session_state['gemini_key'] = aq_key_secret if aq_key_secret else ""
+
+if 'user_plan' not in st.session_state:
+    st.session_state['user_plan'] = 'Basic'
+
+if 'user_xp' not in st.session_state:
+    st.session_state['user_xp'] = 190
+
+if 'tasks' not in st.session_state:
+    st.session_state['tasks'] = []
+
+is_vip = st.session_state['user_plan'] != 'Basic'
+
+# Giao diện CSS chuẩn Obsidian / Cosmic Cyberpunk
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    .stApp {
+        background-color: #0b0f19;
+        color: #f3f4f6;
+    }
+    
+    /* Sidebar Profile Card */
+    .profile-card {
+        background: rgba(17, 24, 39, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 16px;
+        margin-bottom: 20px;
+        backdrop-filter: blur(10px);
+    }
+    
+    .level-badge {
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+        color: white;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        display: inline-block;
+        margin-top: 5px;
+    }
+
+    /* Pricing Cards */
+    .plan-card {
+        background: rgba(17, 24, 39, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 28px 22px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: transform 0.3s ease, border-color 0.3s ease;
+    }
+    
+    .plan-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .plan-featured {
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+        border: 2px solid #3b82f6 !important;
+        box-shadow: 0 0 25px rgba(59, 130, 246, 0.25);
+    }
+
+    .plan-cosmic {
+        background: linear-gradient(180deg, rgba(49, 16, 82, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+        border: 2px solid #a855f7 !important;
+        box-shadow: 0 0 25px rgba(168, 85, 247, 0.25);
+    }
+
+    .feature-list {
+        list-style: none;
+        padding: 0;
+        margin: 20px 0;
+        font-size: 0.9rem;
+        color: #d1d5db;
+        line-height: 1.8;
+    }
+
+    .feature-list li::before {
+        content: "• ";
+        color: #3b82f6;
+        font-weight: bold;
+    }
+
+    /* Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        background-color: rgba(17, 24, 39, 0.6);
+        padding: 8px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 42px;
+        border-radius: 8px;
+        color: #9ca3af;
+        font-weight: 600;
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: #1e293b !important;
+        color: #3b82f6 !important;
+        border-bottom: 2px solid #3b82f6 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 2. KHỞI TẠO CSDL & AI GEMINI KEY AQ
+# ==========================================
+@st.cache_resource
+def init_supabase():
+    url = st.secrets.get("SUPABASE_URL", os.getenv("SUPABASE_URL", ""))
+    key = st.secrets.get("SUPABASE_KEY", os.getenv("SUPABASE_KEY", ""))
+    if url and key:
+        try:
+            return create_client(url, key)
+        except Exception:
+            return None
+    return None
+
+supabase: Client = init_supabase()
+
+def call_gemini_wbs(prompt_text, category, is_vip_mode=False):
+    api_key = st.session_state.get('gemini_key')
+    
+    fallback = [
+        {"step": 1, "title": f"Khảo sát & Lập Kế Hoạch: {prompt_text[:25]}", "description": "Xác định mục tiêu chính và thiết lập môi trường.", "time": "2.0 giờ", "priority": "Cao"},
+        {"step": 2, "title": "Xây dựng Mô-đun Cốt Lõi", "description": "Lập trình chức năng chính và cơ sở dữ liệu.", "time": "4.5 giờ", "priority": "Cao"},
+        {"step": 3, "title": "Thiết kế Giao diện & Tích hợp AI", "description": "Tối ưu hóa trải nghiệm UI/UX và kết nối API.", "time": "3.0 giờ", "priority": "Trung bình"},
+        {"step": 4, "title": "Kiểm thử & Đóng gói Nâng cao", "description": "Sửa lỗi, tối ưu hiệu năng và phát hành.", "time": "1.5 giờ", "priority": "Thấp"}
+    ]
+
+    if not api_key:
+        return fallback
+
+    try:
+        genai.configure(api_key=api_key)
+        model_name = "gemini-1.5-pro" if is_vip_mode else "gemini-1.5-flash"
+        model = genai.GenerativeModel(model_name)
+        
+        sys_prompt = f"""
+        Bạn là Chuyên gia Quản lý Dự án cấp cao. Hãy phân rã công việc sau thành WBS dạng JSON Array:
+        Nhiệm vụ: "{prompt_text}" | Lĩnh vực: "{category}"
+        
+        BẮT BUỘC chỉ trả về duy nhất chuỗi JSON Array nguyên bản, không dùng markdown codeblock.
+        Cấu trúc JSON từng phần tử:
+        [
+            {{"step": 1, "title": "Tên bước", "description": "Mô tả chi tiết", "time": "2 giờ", "priority": "Cao"}}
+        ]
+        Priority chỉ gồm: "Cao", "Trung bình", "Thấp".
+        """
+        
+        res = model.generate_content(sys_prompt)
+        clean_json = res.text.replace("```json", "").replace("
